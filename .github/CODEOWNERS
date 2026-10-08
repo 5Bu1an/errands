@@ -1,0 +1,7 @@
+# Each folder -> its owner. Replace the placeholders with real GitHub usernames.
+# /client/src/features/auth/        @owner
+# /client/src/features/listings/    @owner
+# /server/src/features/auth/        @owner
+# /server/src/features/listings/    @owner
+# /server/src/features/requests/    @owner
+# /server/prisma/                   @owner

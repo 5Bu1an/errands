@@ -1,0 +1,12 @@
+// Shared: all database tables live here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// TODO: add models (User, Listing, Request, Message, Notification, Rating)
