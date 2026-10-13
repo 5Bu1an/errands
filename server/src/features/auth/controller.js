@@ -31,4 +31,34 @@ async function signUp(req, res, next) {
   }
 }
 
-module.exports = { signUp, validateSignUp };
+async function logIn(req, res, next) {
+  const { email, password } = req.body || {};
+  if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  try {
+    const session = await service.logIn(email.trim().toLowerCase(), password);
+    return res.status(200).json(session);
+  } catch (err) {
+    if (err instanceof service.InvalidCredentialsError) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    return next(err);
+  }
+}
+
+async function logOut(req, res, next) {
+  try {
+    await service.logOut(req.token);
+    return res.status(204).end();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+function me(req, res) {
+  return res.json({ user: req.user });
+}
+
+module.exports = { signUp, validateSignUp, logIn, logOut, me };
