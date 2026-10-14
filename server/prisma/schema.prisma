@@ -5,8 +5,21 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// TODO: add models (User, Listing, Request, Message, Notification, Rating)
+// US-12: one row per person. id is the SAME id as their Supabase Auth account.
+model User {
+  id        String   @id @db.Uuid
+  name      String?
+  program   String?
+  bio       String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// TODO: add models (Listing, Request, Message, Notification, Rating)

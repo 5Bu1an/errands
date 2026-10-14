@@ -5,7 +5,11 @@
     "dev": "node --watch src/app.js",
     "start": "node src/app.js",
     "lint": "echo \"lint not configured yet\"",
-    "test": "jest --passWithNoTests"
+    "test": "jest --passWithNoTests",
+    "postinstall": "prisma generate",
+    "db:migrate": "dotenv run -q -f ../.env -- prisma migrate dev",
+    "db:studio": "dotenv run -q -f ../.env -- prisma studio",
+    "db:generate": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
