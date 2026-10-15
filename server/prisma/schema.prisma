@@ -10,16 +10,204 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+
+// ENUMS
+
+
+enum ListingType {
+  RIDE
+  TASK
+}
+
+// Core Lifecycle State Machine (Open -> Requested -> Confirmed -> InProgress -> Completed / Cancelled)
+enum ListingStatus {
+  OPEN
+  REQUESTED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+enum TrackerStep {
+  LEAVING_NOW
+  FIVE_MIN_AWAY
+  IM_HERE
+  COMPLETED
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+}
+
+
+// MODELS
+
+
 // US-12: one row per person. id is the SAME id as their Supabase Auth account.
 model User {
   id        String   @id @db.Uuid
   name      String?
   program   String?
   bio       String?
+  isAdmin   Boolean  @default(false) @map("is_admin")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  listings         Listing[]
+  requests         Request[]
+  notifications    Notification[]
+  sentMessages     Message[]      @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
+  givenRatings     Rating[]       @relation("GivenRatings")
+  receivedRatings  Rating[]       @relation("ReceivedRatings")
+  filedReports     Report[]       @relation("FiledReports")
+  reportsAgainst   Report[]       @relation("ReportsAgainst")
 
   @@map("users")
 }
 
-// TODO: add models (Listing, Request, Message, Notification, Rating)
+// Ride Offers or Task Requests posted by students
+model Listing {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid @map("user_id")
+  type           ListingType
+  title          String
+  description    String?
+  pickupLocation String?       @map("pickup_location") // Core typed location text
+  dropoffText    String?       @map("dropoff_text")    // Core typed drop-off text
+  time           DateTime
+  availableSeats Int?          @map("available_seats") // Relevant for multi-seat rides
+  price          Float?        @default(0.0)
+  status         ListingStatus @default(OPEN)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  // Relationships
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requests    Request[]
+  messages    Message[]
+  tripUpdates TripUpdate[]
+  ratings     Rating[]
+  reports     Report[]
+
+  @@index([userId])
+  @@index([type, status])
+  @@map("listings")
+}
+
+// Seat requests or task claims with typed pickup address & note
+model Request {
+  id             String        @id @default(uuid()) @db.Uuid
+  listingId      String        @db.Uuid @map("listing_id")
+  requesterId    String        @db.Uuid @map("requester_id")
+  pickupLocation String        @map("pickup_location") // Required text pickup point
+  note           String?
+  status         RequestStatus @default(PENDING)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  // Relationships
+  listing  Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  requester User     @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([listingId])
+  @@index([requesterId])
+  @@map("requests")
+}
+
+// Private chat messages per request thread
+model Message {
+  id         String   @id @default(uuid()) @db.Uuid
+  requestId  String   @db.Uuid @map("request_id")
+  listingId  String   @db.Uuid @map("listing_id")
+  senderId   String   @db.Uuid @map("sender_id")
+  receiverId String   @db.Uuid @map("receiver_id")
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  request  Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  listing  Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  sender   User    @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User    @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@map("messages")
+}
+
+// Trip progress tracker steps (Leaving now -> 5 min away -> I'm here -> Completed)
+model TripUpdate {
+  id        String      @id @default(uuid()) @db.Uuid
+  listingId String      @db.Uuid @map("listing_id")
+  step      TrackerStep
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  // Relationships
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, createdAt])
+  @@map("trip_updates")
+}
+
+// In-app notifications
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid @map("user_id")
+  message   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+// Ratings & reviews after completion
+model Rating {
+  id         String   @id @default(uuid()) @db.Uuid
+  listingId  String   @db.Uuid @map("listing_id")
+  giverId    String   @db.Uuid @map("giver_id")
+  receiverId String   @db.Uuid @map("receiver_id")
+  score      Int      // 1-5 rating score
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  listing  Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  giver    User    @relation("GivenRatings", fields: [giverId], references: [id], onDelete: Cascade)
+  receiver User    @relation("ReceivedRatings", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([receiverId])
+  @@map("ratings")
+}
+
+// Reports handled by Admins
+model Report {
+  id          String       @id @default(uuid()) @db.Uuid
+  reporterId  String       @db.Uuid @map("reporter_id")
+  reportedId  String?      @db.Uuid @map("reported_id")
+  listingId   String?      @db.Uuid @map("listing_id")
+  reason      String
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  // Relationships
+  reporter User     @relation("FiledReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  reported User?    @relation("ReportsAgainst", fields: [reportedId], references: [id], onDelete: Cascade)
+  listing  Listing? @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}
