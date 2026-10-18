@@ -111,4 +111,13 @@ async function create(req, res, next) {
   }
 }
 
-module.exports = { create, validateRide, validateTask };
+async function list(req, res, next) {
+  try {
+    const listings = await service.listOpenListings();
+    return res.json({ listings });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { create, list, validateRide, validateTask };
