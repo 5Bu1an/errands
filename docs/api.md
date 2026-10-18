@@ -29,3 +29,13 @@ Document each endpoint here: method, path, auth required, request body, response
 - 401: `{ "error": "Not authenticated" }`
 
 > All protected endpoints return 401 `{ "error": "Not authenticated" }` without a valid token.
+
+## Listings
+
+### POST /listings
+- Auth required: Yes
+- Ride body: `{ "type": "RIDE", "destination": "Walmart", "time": "2026-10-24T17:30:00Z", "seats": 2, "price"?: 5, "pickupLocation"?: "...", "title"?: "...", "description"?: "..." }`
+  - `seats`: whole number from 1 to 6. `price`: $0 or more, defaults to 0. `time` must be in the future.
+  - `title` defaults to `"Ride to <destination>"`.
+- 201: `{ "listing": { "id", "userId", "type", "title", "description", "pickupLocation", "dropoffText", "time", "availableSeats", "price", "status": "OPEN", "createdAt", "updatedAt" } }`
+- 400: `{ "errors": { "<field>": "message" } }`, one entry per invalid field

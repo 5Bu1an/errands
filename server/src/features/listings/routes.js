@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const controller = require('./controller');
+const requireAuth = require('../../middleware/requireAuth');
 
-// TODO: define listings routes, e.g. router.get('/', controller.list);
+router.post('/', requireAuth, controller.create);
 
 module.exports = router;
