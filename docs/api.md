@@ -37,5 +37,7 @@ Document each endpoint here: method, path, auth required, request body, response
 - Ride body: `{ "type": "RIDE", "destination": "Walmart", "time": "2026-10-24T17:30:00Z", "seats": 2, "price"?: 5, "pickupLocation"?: "...", "title"?: "...", "description"?: "..." }`
   - `seats`: whole number from 1 to 6. `price`: $0 or more, defaults to 0. `time` must be in the future.
   - `title` defaults to `"Ride to <destination>"`.
+- Task body: `{ "type": "TASK", "title": "Help moving", "description": "...", "location": "Avila Centre", "time": "2026-10-25T14:00:00Z", "compensation"?: 20 }`
+  - `compensation`: $0 or more, defaults to 0. Saved as `price`; `location` is saved as `pickupLocation`.
 - 201: `{ "listing": { "id", "userId", "type", "title", "description", "pickupLocation", "dropoffText", "time", "availableSeats", "price", "status": "OPEN", "createdAt", "updatedAt" } }`
 - 400: `{ "errors": { "<field>": "message" } }`, one entry per invalid field

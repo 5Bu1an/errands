@@ -11,6 +11,26 @@ function optionalText(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+// Checks the date/time and returns it as a Date. Adds to errors if invalid.
+function checkFutureTime(value, errors) {
+  const time = new Date(value);
+  if (value == null || value === '' || Number.isNaN(time.getTime())) {
+    errors.time = 'Date and time are required';
+  } else if (time <= new Date()) {
+    errors.time = 'Date and time must be in the future';
+  }
+  return time;
+}
+
+// Optional amount that defaults to $0. Adds to errors if negative or not a number.
+function checkAmount(value, field, label, errors) {
+  const amount = value == null || value === '' ? 0 : Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    errors[field] = `${label} must be $0 or more`;
+  }
+  return amount;
+}
+
 // Returns { errors } if anything is wrong, otherwise { data } ready to save.
 function validateRide(body = {}) {
   const errors = {};
@@ -19,12 +39,7 @@ function validateRide(body = {}) {
     errors.destination = 'Destination is required';
   }
 
-  const time = new Date(body.time);
-  if (body.time == null || body.time === '' || Number.isNaN(time.getTime())) {
-    errors.time = 'Date and time are required';
-  } else if (time <= new Date()) {
-    errors.time = 'Date and time must be in the future';
-  }
+  const time = checkFutureTime(body.time, errors);
 
   const seats = Number(body.seats);
   if (body.seats == null || body.seats === '') {
@@ -33,11 +48,7 @@ function validateRide(body = {}) {
     errors.seats = `Seats must be a whole number from ${MIN_SEATS} to ${MAX_SEATS}`;
   }
 
-  // Price is optional and defaults to $0.
-  const price = body.price == null || body.price === '' ? 0 : Number(body.price);
-  if (!Number.isFinite(price) || price < 0) {
-    errors.price = 'Price must be $0 or more';
-  }
+  const price = checkAmount(body.price, 'price', 'Price', errors);
 
   if (Object.keys(errors).length > 0) return { errors };
 
@@ -56,13 +67,40 @@ function validateRide(body = {}) {
   };
 }
 
+// A task stores its location in pickupLocation and its compensation in price.
+function validateTask(body = {}) {
+  const errors = {};
+
+  if (isBlank(body.title)) errors.title = 'Title is required';
+  if (isBlank(body.description)) errors.description = 'Description is required';
+  if (isBlank(body.location)) errors.location = 'Location is required';
+
+  const time = checkFutureTime(body.time, errors);
+  const compensation = checkAmount(body.compensation, 'compensation', 'Compensation', errors);
+
+  if (Object.keys(errors).length > 0) return { errors };
+
+  return {
+    data: {
+      type: 'TASK',
+      title: body.title.trim(),
+      description: body.description.trim(),
+      pickupLocation: body.location.trim(),
+      time,
+      price: compensation,
+    },
+  };
+}
+
+const validators = { RIDE: validateRide, TASK: validateTask };
+
 async function create(req, res, next) {
-  const { type } = req.body || {};
-  if (type !== 'RIDE') {
-    return res.status(400).json({ errors: { type: 'Type must be RIDE' } });
+  const validate = validators[(req.body || {}).type];
+  if (!validate) {
+    return res.status(400).json({ errors: { type: 'Type must be RIDE or TASK' } });
   }
 
-  const { errors, data } = validateRide(req.body);
+  const { errors, data } = validate(req.body);
   if (errors) return res.status(400).json({ errors });
 
   try {
@@ -73,4 +111,4 @@ async function create(req, res, next) {
   }
 }
 
-module.exports = { create, validateRide };
+module.exports = { create, validateRide, validateTask };
