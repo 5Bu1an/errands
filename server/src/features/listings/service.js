@@ -13,4 +13,13 @@ async function createListing(userId, data) {
   });
 }
 
-module.exports = { createListing };
+// All OPEN listings, soonest first, with the poster's name for the card.
+async function listOpenListings() {
+  return prisma.listing.findMany({
+    where: { status: 'OPEN' },
+    orderBy: { time: 'asc' },
+    include: { user: { select: { id: true, name: true } } },
+  });
+}
+
+module.exports = { createListing, listOpenListings };

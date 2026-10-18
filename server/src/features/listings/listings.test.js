@@ -5,7 +5,7 @@ jest.mock('../../lib/supabase', () => ({
   auth: { getUser: jest.fn() },
 }));
 jest.mock('../../lib/prisma', () => ({
-  listing: { create: jest.fn() },
+  listing: { create: jest.fn(), findMany: jest.fn() },
 }));
 
 const supabase = require('../../lib/supabase');
@@ -160,5 +160,38 @@ describe('POST /listings (task request)', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.errors.compensation).toBe('Compensation must be $0 or more');
+  });
+});
+
+describe('GET /listings', () => {
+  test('returns OPEN listings only, soonest first (200)', async () => {
+    const listings = [
+      { id: 'l1', type: 'RIDE', status: 'OPEN', time: TOMORROW, user: { id: 'u1', name: 'Sam' } },
+    ];
+    prisma.listing.findMany.mockResolvedValue(listings);
+
+    const res = await request(app).get('/listings').set('Authorization', 'Bearer acc');
+
+    expect(res.status).toBe(200);
+    expect(res.body.listings).toEqual(listings);
+    expect(prisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'OPEN' }, orderBy: { time: 'asc' } })
+    );
+  });
+
+  test('returns an empty list when there are no open listings (200)', async () => {
+    prisma.listing.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get('/listings').set('Authorization', 'Bearer acc');
+
+    expect(res.status).toBe(200);
+    expect(res.body.listings).toEqual([]);
+  });
+
+  test('returns 401 when logged out', async () => {
+    const res = await request(app).get('/listings');
+
+    expect(res.status).toBe(401);
+    expect(prisma.listing.findMany).not.toHaveBeenCalled();
   });
 });

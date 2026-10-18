@@ -32,6 +32,11 @@ Document each endpoint here: method, path, auth required, request body, response
 
 ## Listings
 
+### GET /listings
+- Auth required: Yes
+- Returns only listings with status `OPEN` (Cancelled, Completed, etc. are hidden), soonest `time` first.
+- 200: `{ "listings": [ { ...listing fields, "user": { "id", "name" } } ] }`, which is `[]` when there are none
+
 ### POST /listings
 - Auth required: Yes
 - Ride body: `{ "type": "RIDE", "destination": "Walmart", "time": "2026-10-24T17:30:00Z", "seats": 2, "price"?: 5, "pickupLocation"?: "...", "title"?: "...", "description"?: "..." }`
