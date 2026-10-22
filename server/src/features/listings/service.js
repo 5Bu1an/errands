@@ -13,4 +13,37 @@ async function createListing(userId, data) {
   });
 }
 
-module.exports = { createListing };
+async function cancelListing(id, userId) {
+  const listing = await prisma.listing.findUnique({
+    where: { id }
+  });
+
+  if (!listing) {
+    return { error: 'NOT_FOUND' };
+  }
+
+  if (listing.userId !== userId) {
+    return { error: 'FORBIDDEN' };
+  }
+
+  if (['COMPLETED', 'CANCELLED'].includes(listing.status)) {
+    return { error: 'INVALID_STATUS' };
+  }
+
+  const result = await prisma.listing.updateMany({
+    where: {
+      id,
+      userId,
+      status: { notIn: ['COMPLETED', 'CANCELLED'] }
+    },
+    data: { status: 'CANCELLED' }
+  });
+
+  if (result.count === 0) {
+    return { error: 'INVALID_STATUS' };
+  }
+
+  return { success: true };
+}
+
+module.exports = { createListing, cancelListing };

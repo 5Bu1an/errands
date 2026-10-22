@@ -39,3 +39,17 @@ Document each endpoint here: method, path, auth required, request body, response
   - `title` defaults to `"Ride to <destination>"`.
 - 201: `{ "listing": { "id", "userId", "type", "title", "description", "pickupLocation", "dropoffText", "time", "availableSeats", "price", "status": "OPEN", "createdAt", "updatedAt" } }`
 - 400: `{ "errors": { "<field>": "message" } }`, one entry per invalid field
+
+### Cancel a Listing (US-14)
+
+**Endpoint:** `PATCH /listings/:id/cancel`
+
+**Authentication:** Required (Bearer token)
+
+Cancels a listing owned by the authenticated user by changing its status to `CANCELLED`.
+
+**Success (200):**
+```json
+{
+  "message": "Listing cancelled successfully"
+}
