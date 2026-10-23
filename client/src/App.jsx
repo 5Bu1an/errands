@@ -1,13 +1,16 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
-// Register each feature's pages here, one line each.
-// e.g. import LoginPage from './features/auth/LoginPage';
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import ListingDetailsPage from './features/listings/ListingDetailsPage';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* <Route path="/login" element={<LoginPage />} /> */}
+        <Route
+          path="/listings/:id"
+          element={<ListingDetailsPage />}
+        />
       </Routes>
     </BrowserRouter>
   );

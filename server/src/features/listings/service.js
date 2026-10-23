@@ -1,18 +1,40 @@
 const prisma = require('../../lib/prisma');
 
-// Saves a new listing for this user. New listings always start as OPEN.
-// connectOrCreate makes sure the user has a row in "users" first, since
-// signing up only creates the Supabase Auth account.
+// Create a new listing for a user.
+// New listings always start with OPEN status.
 async function createListing(userId, data) {
   return prisma.listing.create({
     data: {
       ...data,
       status: 'OPEN',
-      user: { connectOrCreate: { where: { id: userId }, create: { id: userId } } },
-    },
+      user: {
+        connectOrCreate: {
+          where: { id: userId },
+          create: { id: userId }
+        }
+      }
+    }
   });
 }
 
+// US-09: Find a listing using its ID.
+async function getById(id) {
+  const listing = await prisma.listing.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
+  });
+
+  return listing;
+}
+
+// US-14: Cancel a listing.
 async function cancelListing(id, userId) {
   const listing = await prisma.listing.findUnique({
     where: { id }
@@ -46,4 +68,4 @@ async function cancelListing(id, userId) {
   return { success: true };
 }
 
-module.exports = { createListing, cancelListing };
+module.exports = { createListing, getById, cancelListing };
