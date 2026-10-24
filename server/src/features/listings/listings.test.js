@@ -10,6 +10,7 @@ jest.mock('../../lib/prisma', () => ({
   listing: {
     create: jest.fn(),
     findUnique: jest.fn(),
+    updateMany: jest.fn(),
   },
 }));
 
@@ -131,6 +132,87 @@ describe('POST /listings (ride offer)', () => {
     expect(prisma.listing.create).not.toHaveBeenCalled();
   });
 });
+
+
+// US-14: Cancel Listing tests
+describe('US-14: Cancel Listing', () => {
+  const controller = require('./controller');
+  const service = require('./service');
+
+  const listingId = '550e8400-e29b-41d4-a716-446655440000';
+  const userId = '660e8400-e29b-41d4-a716-446655440000';
+
+  function mockResponse() {
+    return {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis()
+    };
+  }
+
+  beforeEach(() => {
+    jest.spyOn(service, 'cancelListing');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('successfully cancels a listing', async () => {
+    service.cancelListing.mockResolvedValue({ success: true });
+
+    const req = { params: { id: listingId }, user: { id: userId } };
+    const res = mockResponse();
+    const next = jest.fn();
+
+    await controller.cancel(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(service.cancelListing).toHaveBeenCalledWith(listingId, userId);
+  });
+
+  test('rejects cancellation by a different user', async () => {
+    service.cancelListing.mockResolvedValue({ error: 'FORBIDDEN' });
+
+    const req = { params: { id: listingId }, user: { id: userId } };
+    const res = mockResponse();
+
+    await controller.cancel(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('returns 404 for a missing listing', async () => {
+    service.cancelListing.mockResolvedValue({ error: 'NOT_FOUND' });
+
+    const req = { params: { id: listingId }, user: { id: userId } };
+    const res = mockResponse();
+
+    await controller.cancel(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('rejects cancellation of a completed listing', async () => {
+    service.cancelListing.mockResolvedValue({ error: 'INVALID_STATUS' });
+
+    const req = { params: { id: listingId }, user: { id: userId } };
+    const res = mockResponse();
+
+    await controller.cancel(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test('rejects an invalid listing ID', async () => {
+    const req = { params: { id: 'invalid-id' }, user: { id: userId } };
+    const res = mockResponse();
+
+    await controller.cancel(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+});
+
 
 // US-09: View Listing Details tests
 describe('US-09: View Listing Details', () => {
