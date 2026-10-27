@@ -54,7 +54,15 @@ export default function CreateListingPage() {
         }
       );
 
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+
+if (!contentType.includes('application/json')) {
+  throw new Error(
+    'The server encountered an error. Please try again after the database migration is completed.'
+  );
+}
+
+const data = await response.json();
 
       if (!response.ok) {
         const validationErrors = data.errors
