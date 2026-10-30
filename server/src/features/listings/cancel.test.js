@@ -25,11 +25,7 @@ test('owner can cancel an open listing', async () => {
 
   expect(await cancelListing(id, ownerId)).toEqual({ success: true });
   expect(prisma.listing.updateMany).toHaveBeenCalledWith({
-    where: {
-      id,
-      userId: ownerId,
-      status: { notIn: ['COMPLETED', 'CANCELLED'] }
-    },
+    where: { id, userId: ownerId, status: 'OPEN' },
     data: { status: 'CANCELLED' }
   });
 });
@@ -65,7 +61,8 @@ test.each(['COMPLETED', 'CANCELLED'])(
     });
 
     expect(await cancelListing(id, ownerId)).toEqual({
-      error: 'INVALID_STATUS'
+      error: 'INVALID_STATUS',
+      from: status
     });
     expect(prisma.listing.updateMany).not.toHaveBeenCalled();
   }
@@ -80,6 +77,7 @@ test('handles concurrent status changes', async () => {
   prisma.listing.updateMany.mockResolvedValue({ count: 0 });
 
   expect(await cancelListing(id, ownerId)).toEqual({
-    error: 'INVALID_STATUS'
+    error: 'INVALID_STATUS',
+    from: 'OPEN'
   });
 });

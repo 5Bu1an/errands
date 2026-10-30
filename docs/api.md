@@ -53,3 +53,30 @@ Cancels a listing owned by the authenticated user by changing its status to `CAN
 {
   "message": "Listing cancelled successfully"
 }
+```
+
+### PATCH /listings/:id/status (US-08)
+- Auth required: Yes (owner of the listing only)
+- Body: `{ "status": "REQUESTED" }`
+- Allowed moves (forward only): `OPEN → REQUESTED → CONFIRMED → IN_PROGRESS → COMPLETED`, and any non-final status → `CANCELLED`. `COMPLETED` and `CANCELLED` are final.
+- 200: `{ "message": "Listing status updated", "status": "REQUESTED" }`
+- 400: `{ "error": "Invalid listing ID" }` or `{ "errors": { "status": "Status must be one of ..." } }`
+- 403: `{ "error": "You cannot change another user’s listing" }`
+- 404: `{ "error": "Listing not found" }`
+- 409: `{ "error": "Listing cannot move from <current> to <status>" }`. The status is left unchanged.
+
+> `PATCH /listings/:id/cancel` follows the same rules, so a Completed or Cancelled listing returns 409.
+
+## Requests
+
+### PATCH /requests/:id/status (US-08)
+- Auth required: Yes
+- Body: `{ "status": "ACCEPTED" }`
+- Who can set what: the listing owner can set `ACCEPTED` or `DECLINED`. The requester can set `CANCELLED`.
+- Allowed moves (forward only): `PENDING → ACCEPTED | DECLINED | CANCELLED`, `ACCEPTED → CANCELLED`. `DECLINED` and `CANCELLED` are final.
+- Requests on a `COMPLETED` or `CANCELLED` listing can't be changed.
+- 200: `{ "message": "Request status updated", "status": "ACCEPTED" }`
+- 400: `{ "error": "Invalid request ID" }` or `{ "errors": { "status": "Status must be one of ..." } }`
+- 403: `{ "error": "You are not allowed to make this change" }`
+- 404: `{ "error": "Request not found" }`
+- 409: `{ "error": "Request cannot move from <current> to <status>" }`. The status is left unchanged.

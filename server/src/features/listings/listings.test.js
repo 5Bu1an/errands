@@ -278,3 +278,77 @@ describe('US-09: View Listing Details', () => {
     });
   });
 });
+// US-08: Lifecycle rules on the status endpoint
+describe('PATCH /listings/:id/status', () => {
+  function patchStatus(status) {
+    return request(app)
+      .patch(`/listings/${LISTING_ID}/status`)
+      .set('Authorization', 'Bearer acc')
+      .send({ status });
+  }
+
+  function dbHasListing(status) {
+    prisma.listing.findUnique.mockResolvedValue({
+      id: LISTING_ID,
+      userId: USER.id,
+      status,
+    });
+  }
+
+  test('saves a valid transition (200)', async () => {
+    dbHasListing('OPEN');
+    prisma.listing.updateMany.mockResolvedValue({ count: 1 });
+
+    const res = await patchStatus('REQUESTED');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ message: 'Listing status updated', status: 'REQUESTED' });
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: LISTING_ID, userId: USER.id, status: 'OPEN' },
+      data: { status: 'REQUESTED' },
+    });
+  });
+
+  test('rejects a backwards transition and keeps the status (409)', async () => {
+    dbHasListing('CONFIRMED');
+
+    const res = await patchStatus('OPEN');
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'Listing cannot move from CONFIRMED to OPEN' });
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  test.each(['COMPLETED', 'CANCELLED'])(
+    'rejects any change once the listing is %s (409)',
+    async (status) => {
+      dbHasListing(status);
+
+      const res = await patchStatus('IN_PROGRESS');
+
+      expect(res.status).toBe(409);
+      expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+    }
+  );
+
+  test('rejects an unknown status (400)', async () => {
+    const res = await patchStatus('DONE');
+
+    expect(res.status).toBe(400);
+    expect(res.body.errors.status).toMatch(/Status must be one of/);
+    expect(prisma.listing.findUnique).not.toHaveBeenCalled();
+  });
+
+  test("rejects changes to another user's listing (403)", async () => {
+    prisma.listing.findUnique.mockResolvedValue({
+      id: LISTING_ID,
+      userId: 'someone-else',
+      status: 'OPEN',
+    });
+
+    const res = await patchStatus('REQUESTED');
+
+    expect(res.status).toBe(403);
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+});

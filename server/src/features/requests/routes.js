@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const controller = require('./controller');
+const requireAuth = require('../../middleware/requireAuth');
 
-// TODO: define requests routes, e.g. router.get('/', controller.list);
+// US-08: Change a request's status (lifecycle rules enforced)
+router.patch('/:id/status', requireAuth, controller.updateStatus);
 
 module.exports = router;
