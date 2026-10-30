@@ -1,4 +1,5 @@
 const prisma = require('../../lib/prisma');
+const { canTransition } = require('./lifecycle');
 
 // Create a new listing for a user.
 // New listings always start with OPEN status.
@@ -34,8 +35,8 @@ async function getById(id) {
   return listing;
 }
 
-// US-14: Cancel a listing.
-async function cancelListing(id, userId) {
+// US-08: Move a listing to a new status, following the lifecycle rules.
+async function changeStatus(id, userId, status) {
   const listing = await prisma.listing.findUnique({
     where: { id }
   });
@@ -48,24 +49,27 @@ async function cancelListing(id, userId) {
     return { error: 'FORBIDDEN' };
   }
 
-  if (['COMPLETED', 'CANCELLED'].includes(listing.status)) {
-    return { error: 'INVALID_STATUS' };
+  if (!canTransition(listing.status, status)) {
+    return { error: 'INVALID_STATUS', from: listing.status };
   }
 
+  // Only update if the status is still the one we checked,
+  // so a concurrent change can't slip past the rules.
   const result = await prisma.listing.updateMany({
-    where: {
-      id,
-      userId,
-      status: { notIn: ['COMPLETED', 'CANCELLED'] }
-    },
-    data: { status: 'CANCELLED' }
+    where: { id, userId, status: listing.status },
+    data: { status }
   });
 
   if (result.count === 0) {
-    return { error: 'INVALID_STATUS' };
+    return { error: 'INVALID_STATUS', from: listing.status };
   }
 
   return { success: true };
 }
 
-module.exports = { createListing, getById, cancelListing };
+// US-14: Cancel a listing.
+async function cancelListing(id, userId) {
+  return changeStatus(id, userId, 'CANCELLED');
+}
+
+module.exports = { createListing, getById, changeStatus, cancelListing };

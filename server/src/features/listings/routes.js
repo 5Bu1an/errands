@@ -11,4 +11,7 @@ router.get('/:id', requireAuth, controller.getById);
 // US-14: Cancel a listing
 router.patch('/:id/cancel', requireAuth, controller.cancel);
 
+// US-08: Change a listing's status (lifecycle rules enforced)
+router.patch('/:id/status', requireAuth, controller.updateStatus);
+
 module.exports = router;
