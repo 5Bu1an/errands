@@ -1,8 +1,15 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate
+} from 'react-router-dom';
+
 import LoginPage from './features/auth/LoginPage';
 import CreateListingPage from './features/listings/CreateListingPage';
 import ListingDetailsPage from './features/listings/ListingDetailsPage';
+import ChatPage from './features/chat/ChatPage';
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('accessToken');
@@ -35,6 +42,15 @@ export default function App() {
           element={
             <ProtectedRoute>
               <ListingDetailsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/requests/:requestId/chat"
+          element={
+            <ProtectedRoute>
+              <ChatPage />
             </ProtectedRoute>
           }
         />
