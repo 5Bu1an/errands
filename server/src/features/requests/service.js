@@ -2,16 +2,18 @@ const prisma = require('../../lib/prisma');
 const { canTransition } = require('./lifecycle');
 const listingLifecycle = require('../listings/lifecycle');
 
-// Who may set each status: the listing owner answers a request,
-// the requester can withdraw it.
 const OWNER_STATUSES = ['ACCEPTED', 'DECLINED'];
 const REQUESTER_STATUSES = ['CANCELLED'];
 
-// US-08: Move a request to a new status, following the lifecycle rules.
 async function changeStatus(id, userId, status) {
+  // Include listing details and listing owner info to know who to notify
   const request = await prisma.request.findUnique({
     where: { id },
-    include: { listing: { select: { userId: true, status: true } } }
+    include: { 
+      listing: { 
+        select: { userId: true, status: true, title: true } 
+      } 
+    }
   });
 
   if (!request) {
@@ -27,15 +29,12 @@ async function changeStatus(id, userId, status) {
     return { error: 'FORBIDDEN' };
   }
 
-  // A finished listing (Completed or Cancelled) freezes its requests too.
   const listingFinished =
     listingLifecycle.TRANSITIONS[request.listing.status].length === 0;
   if (listingFinished || !canTransition(request.status, status)) {
     return { error: 'INVALID_STATUS', from: request.status };
   }
 
-  // Only update if the status is still the one we checked,
-  // so a concurrent change can't slip past the rules.
   const result = await prisma.request.updateMany({
     where: { id, status: request.status },
     data: { status }
@@ -45,7 +44,55 @@ async function changeStatus(id, userId, status) {
     return { error: 'INVALID_STATUS', from: request.status };
   }
 
-  return { success: true };
+  // US-17: Send notification to the requester when accepted or declined
+  if (status === 'ACCEPTED') {
+    await prisma.notification.create({
+      data: {
+        userId: request.requesterId,
+        message: `Your request for "${request.listing.title}" has been accepted!`
+      }
+    });
+  } else if (status === 'DECLINED') {
+    await prisma.notification.create({
+      data: {
+        userId: request.requesterId,
+       message: `You have a new request for your listing "${listing.title}".`
+      }
+    });
+  }
+
+  return { success: status };
 }
 
-module.exports = { changeStatus };
+// US-17: Create a new request and notify the listing owner
+async function createRequest(userId, listingId, pickupLocation, note) {
+  const listing = await prisma.listing.findUnique({
+    where: { id: listingId }
+  });
+
+  if (!listing) {
+    return { error: 'NOT_FOUND' };
+  }
+
+  const newRequest = await prisma.request.create({
+    data: {
+      listingId,
+      requesterId: userId,
+      pickupLocation,
+      note
+    }
+  });
+
+  // Notify the listing owner
+  await prisma.notification.create({
+    data: {
+      userId: listing.userId,
+      message: `You have a new request for your listing "${listing.title}".`
+    }
+  });
+
+  return newRequest;
+}
+
+module.exports = { changeStatus, createRequest };
+
