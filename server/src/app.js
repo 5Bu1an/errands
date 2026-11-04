@@ -12,7 +12,7 @@ app.use(express.json());
 app.use('/auth', require('./features/auth/routes'));
 app.use('/listings', require('./features/listings/routes'));
 app.use('/requests', require('./features/requests/routes'));
-
+app.use('/chat', require('./features/chat/routes'));
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 if (require.main === module) {
