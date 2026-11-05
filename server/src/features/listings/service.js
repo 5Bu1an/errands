@@ -53,6 +53,22 @@ async function changeStatus(id, userId, status) {
     return { error: 'INVALID_STATUS', from: listing.status };
   }
 
+  // US-17: Notify accepted requesters when the listing is completed
+  if (status === 'COMPLETED') {
+    const acceptedRequests = await prisma.request.findMany({
+      where: { listingId: id, status: 'ACCEPTED' }
+    });
+
+    for (const req of acceptedRequests) {
+      await prisma.notification.create({
+        data: {
+          userId: req.requesterId,
+          message: `The listing "${listing.title}" has been completed. Please rate your experience!`
+        }
+      });
+    }
+  }
+
   // Only update if the status is still the one we checked,
   // so a concurrent change can't slip past the rules.
   const result = await prisma.listing.updateMany({
@@ -63,6 +79,8 @@ async function changeStatus(id, userId, status) {
   if (result.count === 0) {
     return { error: 'INVALID_STATUS', from: listing.status };
   }
+
+
 
   return { success: true };
 }
