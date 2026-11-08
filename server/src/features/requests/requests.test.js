@@ -2,7 +2,15 @@
 jest.mock('../../lib/prisma', () => ({
   request: {
     findUnique: jest.fn(),
+    updateMany: jest.fn(),
+    count: jest.fn(),
+    findMany: jest.fn()
+  },
+  listing: {
     updateMany: jest.fn()
+  },
+  notification: {
+    create: jest.fn()
   }
 }));
 
@@ -34,12 +42,21 @@ function mockRequest(status, listingStatus = 'OPEN') {
     id,
     requesterId,
     status,
-    listing: { userId: ownerId, status: listingStatus }
+    listingId: '880e8400-e29b-41d4-a716-446655440000',
+    listing: {
+      userId: ownerId,
+      status: listingStatus,
+      title: 'Ride to Walmart',
+      type: 'RIDE',
+      availableSeats: 2
+    }
   });
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.request.count.mockResolvedValue(0);
+  prisma.request.findMany.mockResolvedValue([]);
 });
 
 describe('request transition rules', () => {
