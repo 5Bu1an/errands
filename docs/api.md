@@ -69,6 +69,14 @@ Cancels a listing owned by the authenticated user by changing its status to `CAN
 
 ## Requests
 
+### GET /requests/listing/:listingId (US-07)
+- Auth required: Yes (owner of the listing only)
+- Returns every request on the listing, oldest first.
+- 200: `{ "requests": [ { "id", "listingId", "requesterId", "pickupLocation", "note", "status", "createdAt", "updatedAt", "requester": { "id", "name" } } ] }`
+- 400: `{ "error": "Invalid listing ID" }`
+- 403: `{ "error": "Only the listing owner can see its requests" }`
+- 404: `{ "error": "Listing not found" }`
+
 ### PATCH /requests/:id/status (US-08)
 - Auth required: Yes
 - Body: `{ "status": "ACCEPTED" }`
@@ -80,3 +88,5 @@ Cancels a listing owned by the authenticated user by changing its status to `CAN
 - 403: `{ "error": "You are not allowed to make this change" }`
 - 404: `{ "error": "Request not found" }`
 - 409: `{ "error": "Request cannot move from <current> to <status>" }`. The status is left unchanged.
+- 409: `{ "error": "This listing is already full" }` when accepting a ride with no free seats, or a task that already has a helper.
+- US-07, on `ACCEPTED`: the listing moves to `CONFIRMED` (if it was `OPEN`/`REQUESTED`). When the last seat is taken (or a task gets its helper), the other `PENDING` requests are set to `DECLINED` and those requesters are notified. Requests can only be accepted while the listing is `OPEN`, `REQUESTED` or `CONFIRMED`.
