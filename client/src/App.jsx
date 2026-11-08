@@ -7,6 +7,7 @@ import {
 } from 'react-router-dom';
 
 import LoginPage from './features/auth/LoginPage';
+import BrowseListingsPage from './features/listings/BrowseListingsPage';
 import CreateListingPage from './features/listings/CreateListingPage';
 import ListingDetailsPage from './features/listings/ListingDetailsPage';
 import ChatPage from './features/chat/ChatPage';
@@ -27,6 +28,15 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
+
+        <Route
+          path="/listings"
+          element={
+            <ProtectedRoute>
+              <BrowseListingsPage />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/listings/new"

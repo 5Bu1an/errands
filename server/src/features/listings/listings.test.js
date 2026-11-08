@@ -9,6 +9,7 @@ jest.mock('../../lib/supabase', () => ({
 jest.mock('../../lib/prisma', () => ({
   listing: {
     create: jest.fn(),
+    findMany: jest.fn(),
     findUnique: jest.fn(),
     updateMany: jest.fn(),
   },
@@ -133,6 +134,96 @@ describe('POST /listings (ride offer)', () => {
   });
 });
 
+describe('POST /listings (task request)', () => {
+  const task = {
+    type: 'TASK',
+    title: 'Help moving a couch',
+    description: 'Second floor to a truck, about an hour',
+    location: 'Avila Centre',
+    time: TOMORROW,
+    compensation: 20,
+  };
+
+  test('saves a valid task with status OPEN (201)', async () => {
+    dbSavesListing();
+
+    const res = await postListing(task);
+
+    expect(res.status).toBe(201);
+    expect(res.body.listing).toMatchObject({
+      type: 'TASK',
+      title: 'Help moving a couch',
+      pickupLocation: 'Avila Centre',
+      price: 20,
+      status: 'OPEN',
+    });
+    expect(res.body.listing.availableSeats).toBeUndefined();
+  });
+
+  test('defaults compensation to $0 when left out', async () => {
+    dbSavesListing();
+
+    const res = await postListing({ ...task, compensation: '' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.listing.price).toBe(0);
+  });
+
+  test('flags each empty required field (400)', async () => {
+    const res = await postListing({ type: 'TASK' });
+
+    expect(res.status).toBe(400);
+    expect(Object.keys(res.body.errors).sort()).toEqual(['description', 'location', 'time', 'title']);
+    expect(prisma.listing.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects a date/time in the past (400)', async () => {
+    const res = await postListing({ ...task, time: YESTERDAY });
+
+    expect(res.status).toBe(400);
+    expect(res.body.errors.time).toBe('Date and time must be in the future');
+  });
+
+  test('rejects negative compensation (400)', async () => {
+    const res = await postListing({ ...task, compensation: -5 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.errors.compensation).toBe('Compensation must be $0 or more');
+  });
+});
+
+describe('GET /listings', () => {
+  test('returns OPEN listings only, soonest first (200)', async () => {
+    const listings = [
+      { id: 'l1', type: 'RIDE', status: 'OPEN', time: TOMORROW, user: { id: 'u1', name: 'Sam' } },
+    ];
+    prisma.listing.findMany.mockResolvedValue(listings);
+
+    const res = await request(app).get('/listings').set('Authorization', 'Bearer acc');
+
+    expect(res.status).toBe(200);
+    expect(res.body.listings).toEqual(listings);
+    expect(prisma.listing.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'OPEN' }, orderBy: { time: 'asc' } })
+    );
+  });
+
+  test('returns an empty list when there are no open listings (200)', async () => {
+    prisma.listing.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get('/listings').set('Authorization', 'Bearer acc');
+
+    expect(res.status).toBe(200);
+    expect(res.body.listings).toEqual([]);
+  });
+
+  test('returns 401 when logged out', async () => {
+    const res = await request(app).get('/listings');
+
+    expect(res.status).toBe(401);
+    expect(prisma.listing.findMany).not.toHaveBeenCalled();
+  });
+});
 
 // US-14: Cancel Listing tests
 describe('US-14: Cancel Listing', () => {
