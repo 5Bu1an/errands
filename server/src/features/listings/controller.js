@@ -177,6 +177,16 @@ async function list(req, res, next) {
   }
 }
 
+// US-18: My own listings for the dashboard.
+async function listMine(req, res, next) {
+  try {
+    const listings = await service.listMine(req.user.id);
+    return res.json({ listings });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 // US-09: View details of a specific listing.
 async function getById(req, res, next) {
   try {
@@ -286,4 +296,4 @@ async function updateStatus(req, res, next) {
   }
 }
 
-module.exports = { create, list, parseFilters, validateRide, validateTask, getById, cancel, updateStatus };
+module.exports = { create, list, listMine, parseFilters, validateRide, validateTask, getById, cancel, updateStatus };

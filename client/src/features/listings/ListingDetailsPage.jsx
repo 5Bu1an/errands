@@ -1,164 +1,125 @@
-
+// US-09: View listing details. Owners can cancel (US-14) and answer requests (US-07);
+// everyone else can request a seat (US-06).
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { api, formatTime } from '../../api';
 import ListingRequests from '../requests/ListingRequests';
+import RequestSeatForm from '../requests/RequestSeatForm';
+
+const FINISHED = ['CANCELLED', 'COMPLETED'];
 
 export default function ListingDetailsPage() {
   const { id } = useParams();
   const [listing, setListing] = useState(null);
+  const [myRequest, setMyRequest] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState(null);
-
   const [cancelling, setCancelling] = useState(false);
+  const currentUserId = localStorage.getItem('userId');
 
-async function handleCancel() {
-  if (!window.confirm('Are you sure you want to cancel this listing?')) {
-    return;
-  }
-
-  try {
-    setCancelling(true);
-    setError('');
-
-    const token = localStorage.getItem('accessToken');
-
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/listings/${id}/cancel`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to cancel listing');
+  async function load() {
+    try {
+      setError('');
+      const [{ listing: found }, { requests }] = await Promise.all([
+        api(`/listings/${id}`),
+        api('/requests/mine'),
+      ]);
+      setListing(found);
+      setMyRequest(
+        requests.find((r) => r.listingId === id && ['PENDING', 'ACCEPTED'].includes(r.status)) || null
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-
-    setListing((previous) => ({
-      ...previous,
-      status: 'CANCELLED'
-    }));
-
-    alert('Listing cancelled successfully!');
-  } catch (err) {
-    alert(err.message);
-  } finally {
-    setCancelling(false);
   }
-}
 
   useEffect(() => {
-    async function loadListing() {
-      try {
-        setLoading(true);
-        setError('');
-
-        const token = localStorage.getItem('accessToken');
-
-        const meResponse = await fetch(
-  `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/auth/me`,
-  {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  }
-);
-
-if (!meResponse.ok) {
-  throw new Error('Unable to verify logged-in user');
-}
-
-const meData = await meResponse.json();
-setCurrentUserId(meData.user.id);
-
-        const response = await fetch(
-          `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/listings/${id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to load listing');
-        }
-
-        setListing(data.listing);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadListing();
+    load();
   }, [id]);
 
-  if (loading) return <p>Loading listing...</p>;
-  if (error) return <p>{error}</p>;
-  if (!listing) return <p>Listing not found.</p>;
+  async function handleCancel() {
+    if (!window.confirm('Are you sure you want to cancel this listing?')) return;
+
+    try {
+      setCancelling(true);
+      await api(`/listings/${id}/cancel`, { method: 'PATCH' });
+      setListing((previous) => ({ ...previous, status: 'CANCELLED' }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  if (loading) return <main className="page"><p className="empty">Loading listing...</p></main>;
+  if (!listing) return <main className="page"><p className="error">{error || 'Listing not found.'}</p></main>;
+
+  const isOwner = currentUserId === listing.userId;
+  const isRide = listing.type === 'RIDE';
+  const seatsTaken = listing._count?.requests ?? 0;
+  const seatsLeft = isRide ? Math.max((listing.availableSeats ?? 0) - seatsTaken, 0) : null;
+  const finished = FINISHED.includes(listing.status);
 
   return (
-    <main style={{ maxWidth: '700px', margin: '40px auto', padding: '20px' }}>
-      <h1>{listing.title}</h1>
+    <main className="page">
+      <Link to="/listings">← Back to listings</Link>
 
-      <p><strong>Type:</strong> {listing.type}</p>
-      <p><strong>Description:</strong> {listing.description || 'Not provided'}</p>
-      <p><strong>Posted by:</strong> {listing.user?.name || 'Unknown'}</p>
-      <p><strong>Pickup:</strong> {listing.pickupLocation || 'Not specified'}</p>
+      <div className="grid-2" style={{ marginTop: 14, alignItems: 'start' }}>
+        <section className="card">
+          <div className="row">
+            <span className={`badge ${isRide ? '' : 'task'}`}>{isRide ? 'RIDE' : 'TASK'}</span>
+            <span className={`badge ${listing.status}`}>{listing.status.replace('_', ' ')}</span>
+          </div>
+          <h1 style={{ marginTop: 10 }}>{listing.title}</h1>
+          <p className="meta">Posted by {listing.user?.name || 'a student'}</p>
 
-      {listing.type === 'RIDE' && (
-        <>
-          <p><strong>Destination:</strong> {listing.dropoffText || 'Not specified'}</p>
-          <p><strong>Available seats:</strong> {listing.availableSeats ?? 'N/A'}</p>
-        </>
-      )}
+          <div style={{ marginTop: 14 }}>
+            <p><strong>When:</strong> {formatTime(listing.time)}</p>
+            <p><strong>{isRide ? 'Leaving from' : 'Location'}:</strong> {listing.pickupLocation || 'Not specified'}</p>
+            {isRide && <p><strong>Destination:</strong> {listing.dropoffText || 'Not specified'}</p>}
+            {isRide && <p><strong>Seats left:</strong> {seatsLeft} of {listing.availableSeats ?? 0}</p>}
+            <p><strong>{isRide ? 'Price per seat' : 'Pays'}:</strong> ${listing.price ?? 0}</p>
+            {listing.description && <p><strong>Details:</strong> {listing.description}</p>}
+          </div>
 
-      <p><strong>Date:</strong> {new Date(listing.time).toLocaleString()}</p>
-      <p><strong>Price:</strong> ${listing.price ?? 0}</p>
-      <p><strong>Status:</strong> {listing.status}</p>
+          {error && <p className="error">{error}</p>}
 
-      {currentUserId === listing.userId &&
-  listing.status !== 'CANCELLED' &&
-  listing.status !== 'COMPLETED' && (
-  <button
-    onClick={handleCancel}
-    disabled={cancelling}
-    style={{
-      backgroundColor: '#dc2626',
-      color: 'white',
-      padding: '12px 20px',
-      border: 'none',
-      borderRadius: '6px',
-      cursor: cancelling ? 'not-allowed' : 'pointer',
-      marginTop: '15px'
-    }}
-  >
-    {cancelling ? 'Cancelling...' : 'Cancel Listing'}
-  </button>
-)}
+          {isOwner && !finished && (
+            <button onClick={handleCancel} disabled={cancelling} className="btn red" style={{ marginTop: 10 }}>
+              {cancelling ? 'Cancelling...' : 'Cancel listing'}
+            </button>
+          )}
+        </section>
 
-      {/* US-07: only the owner sees and answers requests */}
-      {currentUserId === listing.userId && (
-        <ListingRequests
-          listingId={listing.id}
-          onAccepted={() =>
-            setListing((previous) =>
-              ['OPEN', 'REQUESTED'].includes(previous.status)
-                ? { ...previous, status: 'CONFIRMED' }
-                : previous
-            )
-          }
-        />
-      )}
+        <section>
+          {isOwner ? (
+            <ListingRequests
+              listingId={listing.id}
+              onChange={load}
+            />
+          ) : (
+            <RequestSeatForm
+              listing={listing}
+              seatsLeft={seatsLeft}
+              myRequest={myRequest}
+              onRequested={load}
+            />
+          )}
+
+          {/* Planned for later sprints, shown so the demo covers the whole flow. */}
+          <div className="card">
+            <h2>Trip</h2>
+            <div className="row">
+              <button className="btn soon" disabled>Track trip progress</button>
+              <button className="btn soon" disabled>Rate the other person</button>
+              <button className="btn soon" disabled>Report</button>
+            </div>
+            <p className="soon-note">Trip tracker (US-11), ratings (US-15) and reports (US-20) arrive in Sprint 3.</p>
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

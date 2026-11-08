@@ -59,6 +59,15 @@ async function listOpenListings(filters = {}) {
   });
 }
 
+// US-18: Every listing I posted, newest first, with how many requests are pending.
+async function listMine(userId) {
+  return prisma.listing.findMany({
+    where: { userId },
+    orderBy: { time: 'desc' },
+    include: { _count: { select: { requests: { where: { status: 'PENDING' } } } } }
+  });
+}
+
 // US-09: Find a listing using its ID.
 async function getById(id) {
   const listing = await prisma.listing.findUnique({
@@ -69,7 +78,9 @@ async function getById(id) {
           id: true,
           name: true
         }
-      }
+      },
+      // Used to show how many seats are left.
+      _count: { select: { requests: { where: { status: 'ACCEPTED' } } } }
     }
   });
 
@@ -131,4 +142,4 @@ async function cancelListing(id, userId) {
   return changeStatus(id, userId, 'CANCELLED');
 }
 
-module.exports = { createListing, buildListingWhere, listOpenListings, getById, changeStatus, cancelListing };
+module.exports = { createListing, buildListingWhere, listOpenListings, listMine, getById, changeStatus, cancelListing };

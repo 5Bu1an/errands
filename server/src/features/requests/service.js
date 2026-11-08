@@ -160,26 +160,60 @@ async function getListingRequests(listingId, userId) {
   return { requests };
 }
 
-// US-17: Create a new request and notify the listing owner
+// US-06: Request a seat on a ride (or offer to help with a task) with a typed
+// pickup point. Notifies the listing owner (US-17).
 async function createRequest(userId, listingId, pickupLocation, note) {
   const listing = await prisma.listing.findUnique({
-    where: { id: listingId }
+    where: { id: listingId },
+    select: { id: true, userId: true, title: true, type: true, status: true, availableSeats: true }
   });
 
   if (!listing) {
     return { error: 'NOT_FOUND' };
   }
 
-  const newRequest = await prisma.request.create({
+  if (listing.userId === userId) {
+    return { error: 'OWN_LISTING' };
+  }
+
+  if (!ACCEPTING_LISTING_STATUSES.includes(listing.status)) {
+    return { error: 'NOT_OPEN' };
+  }
+
+  const existing = await prisma.request.findFirst({
+    where: { listingId, requesterId: userId, status: { in: ['PENDING', 'ACCEPTED'] } },
+    select: { id: true }
+  });
+
+  if (existing) {
+    return { error: 'ALREADY_REQUESTED' };
+  }
+
+  const acceptedCount = await prisma.request.count({
+    where: { listingId, status: 'ACCEPTED' }
+  });
+
+  if (acceptedCount >= capacityOf(listing)) {
+    return { error: 'LISTING_FULL' };
+  }
+
+  const request = await prisma.request.create({
     data: {
-      listingId,
-      requesterId: userId,
       pickupLocation,
-      note
+      note,
+      listing: { connect: { id: listingId } },
+      requester: {
+        connectOrCreate: { where: { id: userId }, create: { id: userId } }
+      }
     }
   });
 
-  // Notify the listing owner
+  // OPEN -> REQUESTED once the first request comes in.
+  await prisma.listing.updateMany({
+    where: { id: listingId, status: 'OPEN' },
+    data: { status: 'REQUESTED' }
+  });
+
   await prisma.notification.create({
     data: {
       userId: listing.userId,
@@ -187,7 +221,20 @@ async function createRequest(userId, listingId, pickupLocation, note) {
     }
   });
 
-  return newRequest;
+  return { request };
 }
 
-module.exports = { changeStatus, getListingRequests, createRequest };
+// "My rides / my tasks" dashboard (US-18): the requests I have made.
+async function getMyRequests(userId) {
+  return prisma.request.findMany({
+    where: { requesterId: userId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      listing: {
+        select: { id: true, title: true, type: true, time: true, status: true, price: true }
+      }
+    }
+  });
+}
+
+module.exports = { changeStatus, getListingRequests, createRequest, getMyRequests };

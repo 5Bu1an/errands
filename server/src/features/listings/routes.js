@@ -8,6 +8,9 @@ router.get('/', requireAuth, controller.list);
 // Create a new listing
 router.post('/', requireAuth, controller.create);
 
+// US-18: My listings (must come before /:id)
+router.get('/mine', requireAuth, controller.listMine);
+
 // US-09: View details of a specific listing
 router.get('/:id', requireAuth, controller.getById);
 
