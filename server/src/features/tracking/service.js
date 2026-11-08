@@ -1,4 +1,3 @@
-
 const prisma = require('../../lib/prisma');
 
 const STEPS = [
@@ -50,51 +49,68 @@ async function getTracking(listingId, userId) {
 }
 
 async function createTrackingUpdate(listingId, userId, step) {
-  const listing = await prisma.listing.findUnique({
-    where: { id: listingId },
-  });
-
-  if (!listing || listing.type !== 'RIDE') {
-    return { error: 'NOT_FOUND' };
-  }
-
-  if (listing.userId !== userId) {
-    return { error: 'FORBIDDEN' };
-  }
-
-  if (!ACTIVE_STATUSES.includes(listing.status)) {
-    return { error: 'INVALID_STATUS' };
-  }
-
   if (!STEPS.includes(step)) {
     return { error: 'INVALID_STEP' };
   }
 
-  const latest = await prisma.tripUpdate.findFirst({
-    where: { listingId },
-    orderBy: [
-      { createdAt: 'desc' },
-      { id: 'desc' },
-    ],
+  return prisma.$transaction(async (tx) => {
+    // Lock this listing until the transaction finishes.
+    // Concurrent tracking updates for the same ride must wait.
+    const lockedRows = await tx.$queryRaw`
+      SELECT id
+      FROM listings
+      WHERE id = ${listingId}::uuid
+      FOR UPDATE
+    `;
+
+    if (lockedRows.length === 0) {
+      return { error: 'NOT_FOUND' };
+    }
+
+    const listing = await tx.listing.findUnique({
+      where: { id: listingId },
+    });
+
+    if (!listing || listing.type !== 'RIDE') {
+      return { error: 'NOT_FOUND' };
+    }
+
+    if (listing.userId !== userId) {
+      return { error: 'FORBIDDEN' };
+    }
+
+    if (!ACTIVE_STATUSES.includes(listing.status)) {
+      return { error: 'INVALID_STATUS' };
+    }
+
+    const latest = await tx.tripUpdate.findFirst({
+      where: { listingId },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+    });
+
+    const expectedIndex = latest
+      ? STEPS.indexOf(latest.step) + 1
+      : 0;
+
+    if (
+      expectedIndex >= STEPS.length ||
+      STEPS[expectedIndex] !== step
+    ) {
+      return {
+        error: 'INVALID_SEQUENCE',
+        expectedStep: STEPS[expectedIndex] || null,
+      };
+    }
+
+    const update = await tx.tripUpdate.create({
+      data: { listingId, step },
+    });
+
+    return { update };
   });
-
-  const expectedIndex = latest
-    ? STEPS.indexOf(latest.step) + 1
-    : 0;
-
-  if (expectedIndex >= STEPS.length ||
-      STEPS[expectedIndex] !== step) {
-    return {
-      error: 'INVALID_SEQUENCE',
-      expectedStep: STEPS[expectedIndex] || null,
-    };
-  }
-
-  const update = await prisma.tripUpdate.create({
-    data: { listingId, step },
-  });
-
-  return { update };
 }
 
 module.exports = {

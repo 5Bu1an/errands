@@ -1,17 +1,26 @@
 
-jest.mock('../../lib/prisma', () => ({
-  listing: {
-    findUnique: jest.fn(),
-  },
-  request: {
-    findFirst: jest.fn(),
-  },
-  tripUpdate: {
-    findMany: jest.fn(),
-    findFirst: jest.fn(),
-    create: jest.fn(),
-  },
-}));
+jest.mock('../../lib/prisma', () => {
+  const prisma = {
+    listing: {
+      findUnique: jest.fn(),
+    },
+    request: {
+      findFirst: jest.fn(),
+    },
+    tripUpdate: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn(),
+  };
+
+  // Execute the transaction callback with the mocked Prisma client.
+  prisma.$transaction.mockImplementation((callback) => callback(prisma));
+
+  return prisma;
+});
 
 const prisma = require('../../lib/prisma');
 const service = require('./service');
@@ -30,6 +39,10 @@ const ride = {
 
 beforeEach(() => {
   jest.resetAllMocks();
+
+  prisma.$transaction.mockImplementation((callback) => callback(prisma));
+  prisma.$queryRaw.mockResolvedValue([{ id: LISTING_ID }]);
+
   prisma.listing.findUnique.mockResolvedValue({ ...ride });
   prisma.request.findFirst.mockResolvedValue(null);
   prisma.tripUpdate.findMany.mockResolvedValue([]);
@@ -119,6 +132,8 @@ describe('US-11: Post trip progress updates', () => {
     );
 
     expect(result).toEqual({ update });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(prisma.tripUpdate.create).toHaveBeenCalledWith({
       data: {
         listingId: LISTING_ID,
@@ -139,7 +154,7 @@ describe('US-11: Post trip progress updates', () => {
   });
 
   test('missing listing cannot receive updates', async () => {
-    prisma.listing.findUnique.mockResolvedValue(null);
+    prisma.$queryRaw.mockResolvedValue([]);
 
     const result = await service.createTrackingUpdate(
       LISTING_ID,
@@ -148,6 +163,7 @@ describe('US-11: Post trip progress updates', () => {
     );
 
     expect(result).toEqual({ error: 'NOT_FOUND' });
+    expect(prisma.tripUpdate.create).not.toHaveBeenCalled();
   });
 
   test('cancelled rides cannot receive updates', async () => {
@@ -226,6 +242,8 @@ describe('US-11: Post trip progress updates', () => {
       error: 'INVALID_SEQUENCE',
       expectedStep: 'FIVE_MIN_AWAY',
     });
+
+    expect(prisma.tripUpdate.create).not.toHaveBeenCalled();
   });
 
   test('cannot post updates after COMPLETED', async () => {
@@ -253,5 +271,33 @@ describe('US-11: Post trip progress updates', () => {
     );
 
     expect(result).toEqual({ error: 'INVALID_STEP' });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  test('locks the listing before checking the latest step', async () => {
+    const calls = [];
+
+    prisma.$queryRaw.mockImplementation(async () => {
+      calls.push('lock');
+      return [{ id: LISTING_ID }];
+    });
+
+    prisma.tripUpdate.findFirst.mockImplementation(async () => {
+      calls.push('read');
+      return null;
+    });
+
+    prisma.tripUpdate.create.mockImplementation(async () => {
+      calls.push('create');
+      return { step: 'LEAVING_NOW' };
+    });
+
+    await service.createTrackingUpdate(
+      LISTING_ID,
+      OWNER_ID,
+      'LEAVING_NOW'
+    );
+
+    expect(calls).toEqual(['lock', 'read', 'create']);
   });
 });
