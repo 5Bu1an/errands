@@ -3,6 +3,12 @@ jest.mock('../../lib/prisma', () => ({
   listing: {
     findUnique: jest.fn(),
     updateMany: jest.fn()
+  },
+  request: {
+    findMany: jest.fn()
+  },
+  notification: {
+    create: jest.fn()
   }
 }));
 
@@ -31,6 +37,7 @@ const REJECTED = ALL_PAIRS.filter(([from, to]) => !isAllowed(from, to));
 
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.request.findMany.mockResolvedValue([]);
 });
 
 describe('listing transition rules', () => {

@@ -3,6 +3,9 @@ jest.mock('../../lib/prisma', () => ({
   request: {
     findUnique: jest.fn(),
     updateMany: jest.fn()
+  },
+  notification: {
+    create: jest.fn()
   }
 }));
 
@@ -34,7 +37,11 @@ function mockRequest(status, listingStatus = 'OPEN') {
     id,
     requesterId,
     status,
-    listing: { userId: ownerId, status: listingStatus }
+    listing: {
+      userId: ownerId,
+      status: listingStatus,
+      title: 'Ride to Walmart'
+    }
   });
 }
 
