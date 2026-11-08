@@ -1,16 +1,24 @@
 
-jest.mock('../../lib/prisma', () => ({
-  listing: {
-    findUnique: jest.fn()
-  },
-  request: {
-    findFirst: jest.fn(),
-    create: jest.fn()
-  },
-  notification: {
-    create: jest.fn()
-  }
-}));
+jest.mock('../../lib/prisma', () => {
+  const prisma = {
+    listing: {
+      findUnique: jest.fn()
+    },
+    request: {
+      findFirst: jest.fn(),
+      create: jest.fn()
+    },
+    notification: {
+      create: jest.fn()
+    },
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn()
+  };
+
+  prisma.$transaction.mockImplementation((callback) => callback(prisma));
+
+  return prisma;
+});
 
 const prisma = require('../../lib/prisma');
 const { createRequest } = require('./service');
@@ -30,7 +38,8 @@ const listing = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-
+  prisma.$transaction.mockImplementation((callback) => callback(prisma));
+  prisma.$queryRaw.mockResolvedValue([{ id: listingId }]);
   prisma.listing.findUnique.mockResolvedValue({ ...listing });
   prisma.request.findFirst.mockResolvedValue(null);
   prisma.request.create.mockResolvedValue({
@@ -70,6 +79,7 @@ describe('US-06: Request a ride seat', () => {
   test('rejects a nonexistent listing', async () => {
     prisma.listing.findUnique.mockResolvedValue(null);
 
+    prisma.$queryRaw.mockResolvedValue([]);
     const result = await createRequest(
       userId,
       listingId,

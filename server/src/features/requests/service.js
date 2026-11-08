@@ -71,66 +71,77 @@ async function changeStatus(id, userId, status) {
   return { success: true };
 }
 
+
 // US-06: Request a ride seat with a typed pickup point.
 async function createRequest(userId, listingId, pickupLocation, note) {
-  const listing = await prisma.listing.findUnique({
-    where: { id: listingId }
-  });
+  return prisma.$transaction(async (tx) => {
+    // Lock the listing so concurrent requests are checked sequentially.
+    const lockedRows = await tx.$queryRaw`
+      SELECT id
+      FROM listings
+      WHERE id = ${listingId}::uuid
+      FOR UPDATE
+    `;
 
-  if (!listing) {
-    return { error: 'NOT_FOUND' };
-  }
+    if (lockedRows.length === 0) {
+      return { error: 'NOT_FOUND' };
+    }
 
-  // Users cannot request seats on their own listings.
-  if (listing.userId === userId) {
-    return { error: 'FORBIDDEN' };
-  }
+    const listing = await tx.listing.findUnique({
+      where: { id: listingId }
+    });
 
-  // Only open rides with available seats can receive requests.
-  if (
-    listing.type !== 'RIDE' ||
-    listing.status !== 'OPEN' ||
-    !Number.isInteger(listing.availableSeats) ||
-    listing.availableSeats <= 0
-  ) {
-    return { error: 'UNAVAILABLE' };
-  }
+    if (!listing) {
+      return { error: 'NOT_FOUND' };
+    }
 
-  // Prevent duplicate active requests from the same rider.
-  const existingRequest = await prisma.request.findFirst({
-    where: {
-      listingId,
-      requesterId: userId,
-      status: {
-        in: ['PENDING', 'ACCEPTED']
+    if (listing.userId === userId) {
+      return { error: 'FORBIDDEN' };
+    }
+
+    if (
+      listing.type !== 'RIDE' ||
+      listing.status !== 'OPEN' ||
+      !Number.isInteger(listing.availableSeats) ||
+      listing.availableSeats <= 0
+    ) {
+      return { error: 'UNAVAILABLE' };
+    }
+
+    const existingRequest = await tx.request.findFirst({
+      where: {
+        listingId,
+        requesterId: userId,
+        status: {
+          in: ['PENDING', 'ACCEPTED']
+        }
       }
+    });
+
+    if (existingRequest) {
+      return { error: 'DUPLICATE' };
     }
+
+    const newRequest = await tx.request.create({
+      data: {
+        listingId,
+        requesterId: userId,
+        pickupLocation,
+        note,
+        status: 'PENDING'
+      }
+    });
+
+    await tx.notification.create({
+      data: {
+        userId: listing.userId,
+        message: `You have a new request for your listing "${listing.title}".`
+      }
+    });
+
+    return newRequest;
   });
-
-  if (existingRequest) {
-    return { error: 'DUPLICATE' };
-  }
-
-  // Create the request with a pending status.
-  const newRequest = await prisma.request.create({
-    data: {
-      listingId,
-      requesterId: userId,
-      pickupLocation,
-      note,
-      status: 'PENDING'
-    }
-  });
-
-  // US-17: Notify the listing owner about the new request.
-  await prisma.notification.create({
-    data: {
-      userId: listing.userId,
-      message: `You have a new request for your listing "${listing.title}".`
-    }
-  });
-
-  return newRequest;
 }
+
 
 module.exports = { changeStatus, createRequest };
