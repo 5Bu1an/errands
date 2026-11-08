@@ -2,6 +2,9 @@ const router = require('express').Router();
 const controller = require('./controller');
 const requireAuth = require('../../middleware/requireAuth');
 
+// US-05 / US-13: Browse open listings, with optional filters
+router.get('/', requireAuth, controller.list);
+
 // Create a new listing
 router.post('/', requireAuth, controller.create);
 
