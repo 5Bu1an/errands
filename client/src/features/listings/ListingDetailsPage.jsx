@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import ListingRequests from '../requests/ListingRequests';
 
 export default function ListingDetailsPage() {
   const { id } = useParams();
@@ -144,6 +145,20 @@ setCurrentUserId(meData.user.id);
     {cancelling ? 'Cancelling...' : 'Cancel Listing'}
   </button>
 )}
+
+      {/* US-07: only the owner sees and answers requests */}
+      {currentUserId === listing.userId && (
+        <ListingRequests
+          listingId={listing.id}
+          onAccepted={() =>
+            setListing((previous) =>
+              ['OPEN', 'REQUESTED'].includes(previous.status)
+                ? { ...previous, status: 'CONFIRMED' }
+                : previous
+            )
+          }
+        />
+      )}
     </main>
   );
 }
