@@ -32,11 +32,25 @@ Document each endpoint here: method, path, auth required, request body, response
 
 ## Listings
 
+### GET /listings
+- Auth required: Yes
+- Returns only listings with status `OPEN` (Cancelled, Completed, etc. are hidden), soonest `time` first.
+- Optional filters (US-13), combined with AND:
+  - `type`: `RIDE` or `TASK`
+  - `from`, `to`: dates (ISO strings). Only listings with `time` between them, inclusive.
+  - `location`: text matched against pickup, destination and title (case-insensitive)
+  - `maxPrice`: number, $0 or more. Only listings priced at or below it.
+  - Example: `GET /listings?type=RIDE&maxPrice=10&from=2026-11-20T00:00:00Z&to=2026-11-20T23:59:59Z`
+- 400: `{ "errors": { "<filter>": "message" } }`, one entry per invalid filter
+- 200: `{ "listings": [ { ...listing fields, "user": { "id", "name" } } ] }`, which is `[]` when there are none
+
 ### POST /listings
 - Auth required: Yes
 - Ride body: `{ "type": "RIDE", "destination": "Walmart", "time": "2026-10-24T17:30:00Z", "seats": 2, "price"?: 5, "pickupLocation"?: "...", "title"?: "...", "description"?: "..." }`
   - `seats`: whole number from 1 to 6. `price`: $0 or more, defaults to 0. `time` must be in the future.
   - `title` defaults to `"Ride to <destination>"`.
+- Task body: `{ "type": "TASK", "title": "Help moving", "description": "...", "location": "Avila Centre", "time": "2026-10-25T14:00:00Z", "compensation"?: 20 }`
+  - `compensation`: $0 or more, defaults to 0. Saved as `price`; `location` is saved as `pickupLocation`.
 - 201: `{ "listing": { "id", "userId", "type", "title", "description", "pickupLocation", "dropoffText", "time", "availableSeats", "price", "status": "OPEN", "createdAt", "updatedAt" } }`
 - 400: `{ "errors": { "<field>": "message" } }`, one entry per invalid field
 
@@ -69,6 +83,14 @@ Cancels a listing owned by the authenticated user by changing its status to `CAN
 
 ## Requests
 
+### GET /requests/listing/:listingId (US-07)
+- Auth required: Yes (owner of the listing only)
+- Returns every request on the listing, oldest first.
+- 200: `{ "requests": [ { "id", "listingId", "requesterId", "pickupLocation", "note", "status", "createdAt", "updatedAt", "requester": { "id", "name" } } ] }`
+- 400: `{ "error": "Invalid listing ID" }`
+- 403: `{ "error": "Only the listing owner can see its requests" }`
+- 404: `{ "error": "Listing not found" }`
+
 ### PATCH /requests/:id/status (US-08)
 - Auth required: Yes
 - Body: `{ "status": "ACCEPTED" }`
@@ -80,3 +102,5 @@ Cancels a listing owned by the authenticated user by changing its status to `CAN
 - 403: `{ "error": "You are not allowed to make this change" }`
 - 404: `{ "error": "Request not found" }`
 - 409: `{ "error": "Request cannot move from <current> to <status>" }`. The status is left unchanged.
+- 409: `{ "error": "This listing is already full" }` when accepting a ride with no free seats, or a task that already has a helper.
+- US-07, on `ACCEPTED`: the listing moves to `CONFIRMED` (if it was `OPEN`/`REQUESTED`). When the last seat is taken (or a task gets its helper), the other `PENDING` requests are set to `DECLINED` and those requesters are notified. Requests can only be accepted while the listing is `OPEN`, `REQUESTED` or `CONFIRMED`.

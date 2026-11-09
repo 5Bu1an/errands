@@ -18,6 +18,56 @@ async function createListing(userId, data) {
   });
 }
 
+// US-13: Turn the browse filters into a Prisma "where". Listings must be OPEN
+// and match every filter that was given.
+function buildListingWhere(filters = {}) {
+  const where = { status: 'OPEN' };
+
+  if (filters.type) {
+    where.type = filters.type;
+  }
+
+  if (filters.from || filters.to) {
+    where.time = {};
+    if (filters.from) where.time.gte = filters.from;
+    if (filters.to) where.time.lte = filters.to;
+  }
+
+  if (filters.maxPrice != null) {
+    where.price = { lte: filters.maxPrice };
+  }
+
+  // Location matches the pickup, destination or title, ignoring upper/lower case.
+  if (filters.location) {
+    const match = { contains: filters.location, mode: 'insensitive' };
+    where.OR = [
+      { pickupLocation: match },
+      { dropoffText: match },
+      { title: match }
+    ];
+  }
+
+  return where;
+}
+
+// All OPEN listings that match the filters, soonest first, with the poster's name for the card.
+async function listOpenListings(filters = {}) {
+  return prisma.listing.findMany({
+    where: buildListingWhere(filters),
+    orderBy: { time: 'asc' },
+    include: { user: { select: { id: true, name: true } } },
+  });
+}
+
+// US-18: Every listing I posted, newest first, with how many requests are pending.
+async function listMine(userId) {
+  return prisma.listing.findMany({
+    where: { userId },
+    orderBy: { time: 'desc' },
+    include: { _count: { select: { requests: { where: { status: 'PENDING' } } } } }
+  });
+}
+
 // US-09: Find a listing using its ID.
 async function getById(id) {
   const listing = await prisma.listing.findUnique({
@@ -28,7 +78,9 @@ async function getById(id) {
           id: true,
           name: true
         }
-      }
+      },
+      // Used to show how many seats are left.
+      _count: { select: { requests: { where: { status: 'ACCEPTED' } } } }
     }
   });
 
@@ -90,4 +142,4 @@ async function cancelListing(id, userId) {
   return changeStatus(id, userId, 'CANCELLED');
 }
 
-module.exports = { createListing, getById, changeStatus, cancelListing };
+module.exports = { createListing, buildListingWhere, listOpenListings, listMine, getById, changeStatus, cancelListing };

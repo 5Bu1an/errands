@@ -1,59 +1,49 @@
 import React from 'react';
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate
-} from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 
+import NavBar from './components/NavBar';
 import LoginPage from './features/auth/LoginPage';
+import SignupPage from './features/auth/SignupPage';
+import BrowseListingsPage from './features/listings/BrowseListingsPage';
 import CreateListingPage from './features/listings/CreateListingPage';
 import ListingDetailsPage from './features/listings/ListingDetailsPage';
+import DashboardPage from './features/listings/DashboardPage';
 import ChatPage from './features/chat/ChatPage';
+import NotificationsPage from './features/notifications/NotificationsPage';
+import ProfilePage from './features/profile/ProfilePage';
 
-function ProtectedRoute({ children }) {
-  const token = localStorage.getItem('accessToken');
-
-  if (!token) {
+// Logged-in pages share the nav bar. Without a token, go to login.
+function ProtectedLayout() {
+  if (!localStorage.getItem('accessToken')) {
     return <Navigate to="/login" replace />;
   }
 
-  return children;
+  return (
+    <>
+      <NavBar />
+      <Outlet />
+    </>
+  );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
 
-        <Route
-          path="/listings/new"
-          element={
-            <ProtectedRoute>
-              <CreateListingPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route element={<ProtectedLayout />}>
+          <Route path="/listings" element={<BrowseListingsPage />} />
+          <Route path="/listings/new" element={<CreateListingPage />} />
+          <Route path="/listings/:id" element={<ListingDetailsPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/requests/:requestId/chat" element={<ChatPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+        </Route>
 
-        <Route
-          path="/listings/:id"
-          element={
-            <ProtectedRoute>
-              <ListingDetailsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/requests/:requestId/chat"
-          element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="*" element={<Navigate to="/listings" replace />} />
       </Routes>
     </BrowserRouter>
   );

@@ -4,8 +4,9 @@ jest.mock('../../lib/prisma', () => ({
     findUnique: jest.fn(),
     updateMany: jest.fn()
   },
+  // US-17: Completing a listing notifies accepted requesters.
   request: {
-    findMany: jest.fn()
+    findMany: jest.fn().mockResolvedValue([])
   },
   notification: {
     create: jest.fn()

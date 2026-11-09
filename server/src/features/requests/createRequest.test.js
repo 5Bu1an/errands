@@ -2,10 +2,12 @@
 jest.mock('../../lib/prisma', () => {
   const prisma = {
     listing: {
-      findUnique: jest.fn()
+      findUnique: jest.fn(),
+      updateMany: jest.fn()
     },
     request: {
       findFirst: jest.fn(),
+      count: jest.fn(),
       create: jest.fn()
     },
     notification: {
@@ -23,106 +25,138 @@ jest.mock('../../lib/prisma', () => {
 const prisma = require('../../lib/prisma');
 const { createRequest } = require('./service');
 
-const userId = '11111111-1111-4111-8111-111111111111';
-const ownerId = '22222222-2222-4222-8222-222222222222';
-const listingId = '33333333-3333-4333-8333-333333333333';
+const listingId = '880e8400-e29b-41d4-a716-446655440000';
+const ownerId = '660e8400-e29b-41d4-a716-446655440000';
+const riderId = '770e8400-e29b-41d4-a716-446655440000';
 
-const listing = {
-  id: listingId,
-  userId: ownerId,
-  type: 'RIDE',
-  status: 'OPEN',
-  availableSeats: 3,
-  title: 'Ride to Walmart'
+const newRequest = {
+  id: '990e8400-e29b-41d4-a716-446655440000',
+  listingId,
+  requesterId: riderId,
+  pickupLocation: 'Avila Centre',
+  status: 'PENDING'
 };
+
+function mockListing(overrides = {}) {
+  prisma.listing.findUnique.mockResolvedValue({
+    id: listingId,
+    userId: ownerId,
+    title: 'Ride to Walmart',
+    type: 'RIDE',
+    status: 'OPEN',
+    availableSeats: 2,
+    ...overrides
+  });
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
+
   prisma.$transaction.mockImplementation((callback) => callback(prisma));
   prisma.$queryRaw.mockResolvedValue([{ id: listingId }]);
-  prisma.listing.findUnique.mockResolvedValue({ ...listing });
+
   prisma.request.findFirst.mockResolvedValue(null);
-  prisma.request.create.mockResolvedValue({
-    id: '44444444-4444-4444-8444-444444444444',
-    listingId,
-    requesterId: userId,
-    pickupLocation: 'Lakehead University',
-    status: 'PENDING'
-  });
+  prisma.request.count.mockResolvedValue(0);
+  prisma.request.create.mockResolvedValue({ ...newRequest });
+
+  prisma.listing.updateMany.mockResolvedValue({ count: 1 });
   prisma.notification.create.mockResolvedValue({});
+
+  mockListing();
 });
 
-describe('US-06: Request a ride seat', () => {
-  test('creates a pending request with typed pickup location', async () => {
+describe('US-06: Create a request', () => {
+  test('creates a pending request with pickup location and note', async () => {
     const result = await createRequest(
-      userId,
+      riderId,
       listingId,
-      'Lakehead University',
+      'Avila Centre',
       'Near the main entrance'
     );
 
-    expect(result.status).toBe('PENDING');
+    expect(result).toEqual({ request: newRequest });
 
     expect(prisma.request.create).toHaveBeenCalledWith({
       data: {
-        listingId,
-        requesterId: userId,
-        pickupLocation: 'Lakehead University',
+        pickupLocation: 'Avila Centre',
         note: 'Near the main entrance',
-        status: 'PENDING'
+        listing: {
+          connect: { id: listingId }
+        },
+        requester: {
+          connectOrCreate: {
+            where: { id: riderId },
+            create: { id: riderId }
+          }
+        }
       }
     });
+  });
 
-    expect(prisma.notification.create).toHaveBeenCalledTimes(1);
+  test('runs request creation inside a transaction', async () => {
+    await createRequest(riderId, listingId, 'Avila Centre', null);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  test('moves an OPEN listing to REQUESTED', async () => {
+    await createRequest(riderId, listingId, 'Avila Centre', null);
+
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+      where: { id: listingId, status: 'OPEN' },
+      data: { status: 'REQUESTED' }
+    });
+  });
+
+  test('notifies the listing owner', async () => {
+    await createRequest(riderId, listingId, 'Avila Centre', null);
+
+    expect(prisma.notification.create).toHaveBeenCalledWith({
+      data: {
+        userId: ownerId,
+        message: 'You have a new request for your listing "Ride to Walmart".'
+      }
+    });
   });
 
   test('rejects a nonexistent listing', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    expect(
+      await createRequest(riderId, listingId, 'Avila Centre', null)
+    ).toEqual({ error: 'NOT_FOUND' });
+
+    expect(prisma.request.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects a listing missing after locking', async () => {
     prisma.listing.findUnique.mockResolvedValue(null);
 
-    prisma.$queryRaw.mockResolvedValue([]);
-    const result = await createRequest(
-      userId,
-      listingId,
-      'Campus'
-    );
+    expect(
+      await createRequest(riderId, listingId, 'Avila Centre', null)
+    ).toEqual({ error: 'NOT_FOUND' });
 
-    expect(result).toEqual({ error: 'NOT_FOUND' });
     expect(prisma.request.create).not.toHaveBeenCalled();
   });
 
-  test('rejects requests on own listing', async () => {
-    const result = await createRequest(
-      ownerId,
-      listingId,
-      'Campus'
-    );
+  test('rejects requesting your own listing', async () => {
+    expect(
+      await createRequest(ownerId, listingId, 'Avila Centre', null)
+    ).toEqual({ error: 'OWN_LISTING' });
 
-    expect(result).toEqual({ error: 'FORBIDDEN' });
     expect(prisma.request.create).not.toHaveBeenCalled();
   });
 
-  test.each([
-    ['CANCELLED', 'RIDE', 3],
-    ['COMPLETED', 'RIDE', 3],
-    ['OPEN', 'RIDE', 0],
-    ['OPEN', 'TASK', 3]
-  ])(
-    'rejects unavailable listing: %s, %s, %s seats',
-    async (status, type, availableSeats) => {
-      prisma.listing.findUnique.mockResolvedValue({
-        ...listing,
-        status,
-        type,
-        availableSeats
-      });
+  test.each(['CANCELLED', 'COMPLETED', 'IN_PROGRESS'])(
+    'rejects a listing with status %s',
+    async (status) => {
+      mockListing({ status });
 
-      const result = await createRequest(
-        userId,
-        listingId,
-        'Campus'
-      );
+      expect(
+        await createRequest(riderId, listingId, 'Avila Centre', null)
+      ).toEqual({ error: 'NOT_OPEN' });
 
-      expect(result).toEqual({ error: 'UNAVAILABLE' });
       expect(prisma.request.create).not.toHaveBeenCalled();
     }
   );
@@ -135,25 +169,89 @@ describe('US-06: Request a ride seat', () => {
         status
       });
 
-      const result = await createRequest(
-        userId,
-        listingId,
-        'Campus'
-      );
+      expect(
+        await createRequest(riderId, listingId, 'Avila Centre', null)
+      ).toEqual({ error: 'ALREADY_REQUESTED' });
 
-      expect(result).toEqual({ error: 'DUPLICATE' });
       expect(prisma.request.create).not.toHaveBeenCalled();
     }
   );
 
-  test('notifies the listing owner after creation', async () => {
-    await createRequest(userId, listingId, 'Campus');
+  test('rejects a full ride', async () => {
+    mockListing({ availableSeats: 2 });
+    prisma.request.count.mockResolvedValue(2);
 
-    expect(prisma.notification.create).toHaveBeenCalledWith({
-      data: {
-        userId: ownerId,
-        message: 'You have a new request for your listing "Ride to Walmart".'
-      }
+    expect(
+      await createRequest(riderId, listingId, 'Avila Centre', null)
+    ).toEqual({ error: 'LISTING_FULL' });
+
+    expect(prisma.request.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects a ride with zero available seats', async () => {
+    mockListing({ availableSeats: 0 });
+
+    expect(
+      await createRequest(riderId, listingId, 'Avila Centre', null)
+    ).toEqual({ error: 'LISTING_FULL' });
+
+    expect(prisma.request.create).not.toHaveBeenCalled();
+  });
+
+  test('allows another request while seats remain', async () => {
+    mockListing({ status: 'REQUESTED', availableSeats: 3 });
+    prisma.request.count.mockResolvedValue(1);
+
+    const result = await createRequest(
+      riderId,
+      listingId,
+      'Avila Centre',
+      null
+    );
+
+    expect(result).toEqual({ request: newRequest });
+  });
+
+  test('allows requests on CONFIRMED listings with capacity', async () => {
+    mockListing({ status: 'CONFIRMED', availableSeats: 3 });
+    prisma.request.count.mockResolvedValue(1);
+
+    const result = await createRequest(
+      riderId,
+      listingId,
+      'Avila Centre',
+      null
+    );
+
+    expect(result).toEqual({ request: newRequest });
+  });
+
+  test('allows a task request when no helper is accepted', async () => {
+    mockListing({
+      type: 'TASK',
+      availableSeats: null
     });
+
+    const result = await createRequest(
+      riderId,
+      listingId,
+      'Avila Centre',
+      null
+    );
+
+    expect(result).toEqual({ request: newRequest });
+  });
+
+  test('rejects a task when a helper is already accepted', async () => {
+    mockListing({
+      type: 'TASK',
+      availableSeats: null
+    });
+
+    prisma.request.count.mockResolvedValue(1);
+
+    expect(
+      await createRequest(riderId, listingId, 'Avila Centre', null)
+    ).toEqual({ error: 'LISTING_FULL' });
   });
 });

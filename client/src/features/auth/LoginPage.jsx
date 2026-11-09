@@ -1,10 +1,11 @@
-
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../../api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const location = useLocation();
+  const [email, setEmail] = useState(location.state?.email || '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,23 +16,15 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/auth/login`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
+      const data = await api('/auth/login', {
+        method: 'POST',
+        token: null,
+        body: { email, password },
+      });
 
       localStorage.setItem('accessToken', data.accessToken);
-      navigate('/listings/new');
+      localStorage.setItem('userId', data.user.id);
+      navigate('/listings');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -40,36 +33,36 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 400, margin: '60px auto', padding: 20 }}>
-      <h1>Errands Login</h1>
+    <div className="auth-wrap">
+      <div className="card auth-card">
+        <span className="brand">Errand<span>s</span></span>
+        <p className="subtitle">Rides and help from students on campus</p>
 
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          style={{ display: 'block', width: '100%', marginBottom: 16 }}
-        />
+        {location.state?.justSignedUp && (
+          <p className="success">Account created. Log in to get started.</p>
+        )}
 
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          style={{ display: 'block', width: '100%', marginBottom: 16 }}
-        />
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label htmlFor="email">Email</label>
+            <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="password">Password</label>
+            <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? 'Logging in...' : 'Log In'}
-        </button>
+          {error && <p role="alert" className="error">{error}</p>}
 
-        {error && <p role="alert" style={{ color: 'red' }}>{error}</p>}
-      </form>
-    </main>
+          <button type="submit" className="btn full" disabled={loading}>
+            {loading ? 'Logging in...' : 'Log In'}
+          </button>
+        </form>
+
+        <p className="subtitle" style={{ marginTop: 16, marginBottom: 0 }}>
+          New here? <Link to="/signup">Create an account</Link>
+        </p>
+      </div>
+    </div>
   );
 }

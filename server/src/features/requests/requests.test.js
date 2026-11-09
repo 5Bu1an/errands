@@ -1,19 +1,34 @@
-// US-08: Request lifecycle rules.
-jest.mock('../../lib/prisma', () => ({
-  request: {
-    findUnique: jest.fn(),
-    updateMany: jest.fn()
-  },
-  notification: {
-    create: jest.fn()
-  }
-}));
+
+// US-08 / US-07: Request lifecycle, permissions, and capacity tests.
+jest.mock('../../lib/prisma', () => {
+  const prisma = {
+    request: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn(),
+      count: jest.fn(),
+      findMany: jest.fn()
+    },
+    listing: {
+      updateMany: jest.fn()
+    },
+    notification: {
+      create: jest.fn()
+    },
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn()
+  };
+
+  prisma.$transaction.mockImplementation((callback) => callback(prisma));
+
+  return prisma;
+});
 
 const prisma = require('../../lib/prisma');
 const { STATUSES, canTransition } = require('./lifecycle');
 const { changeStatus } = require('./service');
 
 const id = '550e8400-e29b-41d4-a716-446655440000';
+const listingId = '880e8400-e29b-41d4-a716-446655440000';
 const ownerId = '660e8400-e29b-41d4-a716-446655440000';
 const requesterId = '770e8400-e29b-41d4-a716-446655440000';
 
@@ -23,30 +38,53 @@ const ALLOWED = [
   ['PENDING', 'CANCELLED'],
   ['ACCEPTED', 'CANCELLED']
 ];
+
 const isAllowed = (from, to) =>
   ALLOWED.some(([f, t]) => f === from && t === to);
 
-const ALL_PAIRS = STATUSES.flatMap((from) => STATUSES.map((to) => [from, to]));
+const ALL_PAIRS = STATUSES.flatMap((from) =>
+  STATUSES.map((to) => [from, to])
+);
+
 const REJECTED = ALL_PAIRS.filter(([from, to]) => !isAllowed(from, to));
 
-// The user allowed to set each status: the owner answers, the requester withdraws.
-const actorFor = (status) => (status === 'CANCELLED' ? requesterId : ownerId);
+const actorFor = (status) =>
+  status === 'CANCELLED' ? requesterId : ownerId;
 
-function mockRequest(status, listingStatus = 'OPEN') {
-  prisma.request.findUnique.mockResolvedValue({
+function mockRequest(status, listingStatus = 'OPEN', overrides = {}) {
+  const request = {
     id,
+    listingId,
     requesterId,
     status,
     listing: {
       userId: ownerId,
       status: listingStatus,
-      title: 'Ride to Walmart'
+      title: 'Ride to Walmart',
+      type: 'RIDE',
+      availableSeats: 2,
+      ...overrides
     }
-  });
+  };
+
+  // First lookup finds the listing ID; second lookup reads the request
+  // after acquiring the listing lock.
+  prisma.request.findUnique
+    .mockResolvedValueOnce({ listingId })
+    .mockResolvedValueOnce(request);
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+
+  prisma.$transaction.mockImplementation((callback) => callback(prisma));
+  prisma.$queryRaw.mockResolvedValue([{ id: listingId }]);
+
+  prisma.request.count.mockResolvedValue(0);
+  prisma.request.findMany.mockResolvedValue([]);
+  prisma.request.updateMany.mockResolvedValue({ count: 1 });
+  prisma.listing.updateMany.mockResolvedValue({ count: 1 });
+  prisma.notification.create.mockResolvedValue({});
 });
 
 describe('request transition rules', () => {
@@ -60,16 +98,21 @@ describe('request transition rules', () => {
 });
 
 describe('changeStatus', () => {
-  test.each(ALLOWED)('saves a valid move %s -> %s', async (from, to) => {
-    mockRequest(from);
-    prisma.request.updateMany.mockResolvedValue({ count: 1 });
+  test.each(ALLOWED)(
+    'saves a valid move %s -> %s',
+    async (from, to) => {
+      mockRequest(from);
 
-    expect(await changeStatus(id, actorFor(to), to)).toEqual({ success: true });
-    expect(prisma.request.updateMany).toHaveBeenCalledWith({
-      where: { id, status: from },
-      data: { status: to }
-    });
-  });
+      expect(await changeStatus(id, actorFor(to), to)).toEqual({
+        success: true
+      });
+
+      expect(prisma.request.updateMany).toHaveBeenCalledWith({
+        where: { id, status: from },
+        data: { status: to }
+      });
+    }
+  );
 
   test.each(REJECTED.filter(([, to]) => to !== 'PENDING'))(
     'rejects %s -> %s without saving',
@@ -80,6 +123,7 @@ describe('changeStatus', () => {
         error: 'INVALID_STATUS',
         from
       });
+
       expect(prisma.request.updateMany).not.toHaveBeenCalled();
     }
   );
@@ -93,6 +137,7 @@ describe('changeStatus', () => {
         error: 'INVALID_STATUS',
         from: 'PENDING'
       });
+
       expect(prisma.request.updateMany).not.toHaveBeenCalled();
     }
   );
@@ -100,8 +145,16 @@ describe('changeStatus', () => {
   test('nobody can move a request back to PENDING', async () => {
     mockRequest('ACCEPTED');
 
-    expect(await changeStatus(id, ownerId, 'PENDING')).toEqual({ error: 'FORBIDDEN' });
-    expect(await changeStatus(id, requesterId, 'PENDING')).toEqual({ error: 'FORBIDDEN' });
+    expect(await changeStatus(id, ownerId, 'PENDING')).toEqual({
+      error: 'FORBIDDEN'
+    });
+
+    mockRequest('ACCEPTED');
+
+    expect(await changeStatus(id, requesterId, 'PENDING')).toEqual({
+      error: 'FORBIDDEN'
+    });
+
     expect(prisma.request.updateMany).not.toHaveBeenCalled();
   });
 
@@ -113,7 +166,7 @@ describe('changeStatus', () => {
     });
   });
 
-  test('listing owner cannot cancel on behalf of the requester', async () => {
+  test('listing owner cannot cancel a request on behalf of requester', async () => {
     mockRequest('PENDING');
 
     expect(await changeStatus(id, ownerId, 'CANCELLED')).toEqual({
@@ -122,14 +175,25 @@ describe('changeStatus', () => {
   });
 
   test('missing request returns NOT_FOUND', async () => {
-    prisma.request.findUnique.mockResolvedValue(null);
+    prisma.request.findUnique.mockResolvedValueOnce(null);
+
+    expect(await changeStatus(id, ownerId, 'ACCEPTED')).toEqual({
+      error: 'NOT_FOUND'
+    });
+
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  test('missing listing returns NOT_FOUND', async () => {
+    prisma.request.findUnique.mockResolvedValueOnce({ listingId });
+    prisma.$queryRaw.mockResolvedValue([]);
 
     expect(await changeStatus(id, ownerId, 'ACCEPTED')).toEqual({
       error: 'NOT_FOUND'
     });
   });
 
-  test('rejects when the status changed in the meantime', async () => {
+  test('rejects when the request status changes before saving', async () => {
     mockRequest('PENDING');
     prisma.request.updateMany.mockResolvedValue({ count: 0 });
 
@@ -137,5 +201,95 @@ describe('changeStatus', () => {
       error: 'INVALID_STATUS',
       from: 'PENDING'
     });
+  });
+
+  test('rejects acceptance when all seats are occupied', async () => {
+    mockRequest('PENDING', 'REQUESTED', { availableSeats: 2 });
+    prisma.request.count.mockResolvedValue(2);
+
+    expect(await changeStatus(id, ownerId, 'ACCEPTED')).toEqual({
+      error: 'LISTING_FULL'
+    });
+
+    expect(prisma.request.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('acceptance moves listing to CONFIRMED', async () => {
+    mockRequest('PENDING', 'REQUESTED');
+
+    expect(await changeStatus(id, ownerId, 'ACCEPTED')).toEqual({
+      success: true
+    });
+
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: listingId,
+        status: { in: ['OPEN', 'REQUESTED'] }
+      },
+      data: { status: 'CONFIRMED' }
+    });
+  });
+
+  test('accepting the final seat declines other pending requests', async () => {
+    mockRequest('PENDING', 'REQUESTED', { availableSeats: 2 });
+    prisma.request.count.mockResolvedValue(1);
+
+    prisma.request.findMany.mockResolvedValue([
+      {
+        id: '990e8400-e29b-41d4-a716-446655440000',
+        requesterId: 'aa0e8400-e29b-41d4-a716-446655440000'
+      }
+    ]);
+
+    expect(await changeStatus(id, ownerId, 'ACCEPTED')).toEqual({
+      success: true
+    });
+
+    expect(prisma.request.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: {
+          in: ['990e8400-e29b-41d4-a716-446655440000']
+        },
+        status: 'PENDING'
+      },
+      data: { status: 'DECLINED' }
+    });
+
+    expect(prisma.notification.create).toHaveBeenCalledTimes(2);
+  });
+
+  test('notifies requester when accepted', async () => {
+    mockRequest('PENDING');
+
+    await changeStatus(id, ownerId, 'ACCEPTED');
+
+    expect(prisma.notification.create).toHaveBeenCalledWith({
+      data: {
+        userId: requesterId,
+        message: 'Your request for "Ride to Walmart" has been accepted!'
+      }
+    });
+  });
+
+  test('notifies requester when declined', async () => {
+    mockRequest('PENDING');
+
+    await changeStatus(id, ownerId, 'DECLINED');
+
+    expect(prisma.notification.create).toHaveBeenCalledWith({
+      data: {
+        userId: requesterId,
+        message: 'Your request for "Ride to Walmart" was declined.'
+      }
+    });
+  });
+
+  test('uses a transaction and listing lock', async () => {
+    mockRequest('PENDING');
+
+    await changeStatus(id, ownerId, 'ACCEPTED');
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 });
