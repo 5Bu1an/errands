@@ -1,4 +1,6 @@
+
 // US-07: Accept or decline a request.
+
 jest.mock('../../lib/prisma', () => ({
   request: {
     findUnique: jest.fn(),
@@ -12,7 +14,9 @@ jest.mock('../../lib/prisma', () => ({
   },
   notification: {
     create: jest.fn()
-  }
+  },
+  $queryRaw: jest.fn(),
+  $transaction: jest.fn()
 }));
 
 const prisma = require('../../lib/prisma');
@@ -24,42 +28,62 @@ const ownerId = '660e8400-e29b-41d4-a716-446655440000';
 const riderId = '770e8400-e29b-41d4-a716-446655440000';
 const outsiderId = '990e8400-e29b-41d4-a716-446655440000';
 
-function mockRequest({ listingStatus = 'REQUESTED', type = 'RIDE', seats = 2 } = {}) {
-  prisma.request.findUnique.mockResolvedValue({
-    id: requestId,
-    listingId,
-    requesterId: riderId,
-    status: 'PENDING',
-    listing: {
-      userId: ownerId,
-      status: listingStatus,
-      title: 'Ride to Walmart',
-      type,
-      availableSeats: type === 'RIDE' ? seats : null
-    }
-  });
+function mockRequest({
+  listingStatus = 'REQUESTED',
+  type = 'RIDE',
+  seats = 2
+} = {}) {
+  prisma.request.findUnique
+    .mockResolvedValueOnce({ listingId })
+    .mockResolvedValueOnce({
+      id: requestId,
+      listingId,
+      requesterId: riderId,
+      status: 'PENDING',
+      listing: {
+        userId: ownerId,
+        status: listingStatus,
+        title: 'Ride to Walmart',
+        type,
+        availableSeats: type === 'RIDE' ? seats : null
+      }
+    });
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+
+  // Simulate Prisma interactive transactions.
+  prisma.$transaction.mockImplementation((callback) => callback(prisma));
+
+  // Simulate successfully locking the listing row.
+  prisma.$queryRaw.mockResolvedValue([{ id: listingId }]);
+
   prisma.request.updateMany.mockResolvedValue({ count: 1 });
   prisma.request.count.mockResolvedValue(0);
   prisma.request.findMany.mockResolvedValue([]);
   prisma.listing.updateMany.mockResolvedValue({ count: 1 });
+  prisma.notification.create.mockResolvedValue({});
 });
 
 describe('accepting a request', () => {
   test('marks the request ACCEPTED and the listing CONFIRMED', async () => {
     mockRequest();
 
-    expect(await changeStatus(requestId, ownerId, 'ACCEPTED')).toEqual({ success: true });
+    expect(await changeStatus(requestId, ownerId, 'ACCEPTED')).toEqual({
+      success: true
+    });
 
     expect(prisma.request.updateMany).toHaveBeenCalledWith({
       where: { id: requestId, status: 'PENDING' },
       data: { status: 'ACCEPTED' }
     });
+
     expect(prisma.listing.updateMany).toHaveBeenCalledWith({
-      where: { id: listingId, status: { in: ['OPEN', 'REQUESTED'] } },
+      where: {
+        id: listingId,
+        status: { in: ['OPEN', 'REQUESTED'] }
+      },
       data: { status: 'CONFIRMED' }
     });
   });
@@ -84,6 +108,7 @@ describe('accepting a request', () => {
     expect(await changeStatus(requestId, ownerId, 'ACCEPTED')).toEqual({
       error: 'LISTING_FULL'
     });
+
     expect(prisma.request.updateMany).not.toHaveBeenCalled();
   });
 
@@ -98,7 +123,9 @@ describe('accepting a request', () => {
 
   test('declines the other pending requests once the last seat is taken', async () => {
     mockRequest({ seats: 2 });
+
     prisma.request.count.mockResolvedValue(1);
+
     prisma.request.findMany.mockResolvedValue([
       { id: 'other-1', requesterId: 'rider-2' },
       { id: 'other-2', requesterId: 'rider-3' }
@@ -107,9 +134,13 @@ describe('accepting a request', () => {
     await changeStatus(requestId, ownerId, 'ACCEPTED');
 
     expect(prisma.request.updateMany).toHaveBeenLastCalledWith({
-      where: { id: { in: ['other-1', 'other-2'] }, status: 'PENDING' },
+      where: {
+        id: { in: ['other-1', 'other-2'] },
+        status: 'PENDING'
+      },
       data: { status: 'DECLINED' }
     });
+
     expect(prisma.notification.create).toHaveBeenCalledWith({
       data: {
         userId: 'rider-2',
@@ -135,6 +166,7 @@ describe('accepting a request', () => {
       error: 'INVALID_STATUS',
       from: 'PENDING'
     });
+
     expect(prisma.request.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -143,12 +175,15 @@ describe('declining a request', () => {
   test('marks the request DECLINED and leaves the listing alone', async () => {
     mockRequest();
 
-    expect(await changeStatus(requestId, ownerId, 'DECLINED')).toEqual({ success: true });
+    expect(await changeStatus(requestId, ownerId, 'DECLINED')).toEqual({
+      success: true
+    });
 
     expect(prisma.request.updateMany).toHaveBeenCalledWith({
       where: { id: requestId, status: 'PENDING' },
       data: { status: 'DECLINED' }
     });
+
     expect(prisma.listing.updateMany).not.toHaveBeenCalled();
   });
 
@@ -171,6 +206,7 @@ describe('declining a request', () => {
     expect(await changeStatus(requestId, outsiderId, 'DECLINED')).toEqual({
       error: 'FORBIDDEN'
     });
+
     expect(prisma.request.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -178,25 +214,43 @@ describe('declining a request', () => {
 describe('getListingRequests', () => {
   test('returns the requests for the owner', async () => {
     const requests = [
-      { id: requestId, status: 'PENDING', requester: { id: riderId, name: 'Sam' } }
+      {
+        id: requestId,
+        status: 'PENDING',
+        requester: { id: riderId, name: 'Sam' }
+      }
     ];
-    prisma.listing.findUnique.mockResolvedValue({ userId: ownerId });
+
+    prisma.listing.findUnique.mockResolvedValue({
+      userId: ownerId
+    });
+
     prisma.request.findMany.mockResolvedValue(requests);
 
-    expect(await getListingRequests(listingId, ownerId)).toEqual({ requests });
+    expect(await getListingRequests(listingId, ownerId)).toEqual({
+      requests
+    });
+
     expect(prisma.request.findMany).toHaveBeenCalledWith({
       where: { listingId },
       orderBy: { createdAt: 'asc' },
-      include: { requester: { select: { id: true, name: true } } }
+      include: {
+        requester: {
+          select: { id: true, name: true }
+        }
+      }
     });
   });
 
   test('other users cannot see the requests', async () => {
-    prisma.listing.findUnique.mockResolvedValue({ userId: ownerId });
+    prisma.listing.findUnique.mockResolvedValue({
+      userId: ownerId
+    });
 
     expect(await getListingRequests(listingId, outsiderId)).toEqual({
       error: 'FORBIDDEN'
     });
+
     expect(prisma.request.findMany).not.toHaveBeenCalled();
   });
 

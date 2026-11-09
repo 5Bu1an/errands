@@ -4,7 +4,7 @@ jest.mock('../../lib/prisma', () => ({
     findUnique: jest.fn(),
     updateMany: jest.fn()
   },
-  // US-17: completing a listing notifies its accepted requesters
+  // US-17: Completing a listing notifies accepted requesters.
   request: {
     findMany: jest.fn().mockResolvedValue([])
   },
@@ -38,6 +38,7 @@ const REJECTED = ALL_PAIRS.filter(([from, to]) => !isAllowed(from, to));
 
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.request.findMany.mockResolvedValue([]);
 });
 
 describe('listing transition rules', () => {
