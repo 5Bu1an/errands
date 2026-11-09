@@ -78,4 +78,59 @@ async function listForListing(req, res, next) {
   }
 }
 
-module.exports = { updateStatus, listForListing };
+const CREATE_ERRORS = {
+  NOT_FOUND: [404, 'Listing not found'],
+  OWN_LISTING: [403, 'You cannot request your own listing'],
+  NOT_OPEN: [409, 'This listing is no longer taking requests'],
+  ALREADY_REQUESTED: [409, 'You already have a request on this listing'],
+  LISTING_FULL: [409, 'This listing is already full']
+};
+
+// US-06: Request a seat / offer to help, with a typed pickup point.
+async function create(req, res, next) {
+  const { listingId, pickupLocation, note } = req.body || {};
+  const errors = {};
+
+  if (typeof listingId !== 'string' || !uuidPattern.test(listingId)) {
+    errors.listingId = 'A valid listing ID is required';
+  }
+  if (typeof pickupLocation !== 'string' || !pickupLocation.trim()) {
+    errors.pickupLocation = 'Pickup point is required';
+  } else if (pickupLocation.trim().length > 200) {
+    errors.pickupLocation = 'Pickup point must be 200 characters or less';
+  }
+  if (note != null && (typeof note !== 'string' || note.length > 300)) {
+    errors.note = 'Note must be text of 300 characters or less';
+  }
+  if (Object.keys(errors).length > 0) return res.status(400).json({ errors });
+
+  try {
+    const result = await service.createRequest(
+      req.user.id,
+      listingId,
+      pickupLocation.trim(),
+      typeof note === 'string' && note.trim() ? note.trim() : null
+    );
+
+    if (result.error) {
+      const [code, message] = CREATE_ERRORS[result.error];
+      return res.status(code).json({ error: message });
+    }
+
+    return res.status(201).json({ request: result.request });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// US-18: The requests I have made.
+async function listMine(req, res, next) {
+  try {
+    const requests = await service.getMyRequests(req.user.id);
+    return res.json({ requests });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { updateStatus, listForListing, create, listMine };

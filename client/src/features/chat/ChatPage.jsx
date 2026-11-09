@@ -79,76 +79,42 @@ export default function ChatPage() {
     }
   }
 
+  const currentUserId = localStorage.getItem('userId');
+
   return (
-    <main
-      style={{
-        maxWidth: 700,
-        margin: '32px auto',
-        padding: 20,
-        fontFamily: 'Arial, sans-serif'
-      }}
-    >
+    <main className="page page-narrow">
       <h1>Request chat</h1>
-      <p>
-        Messages refresh every five seconds.
-        Showing up to 100 recent messages.
+      <p className="subtitle" style={{ marginBottom: 16 }}>
+        Sort out pickup details here. Messages refresh every five seconds.
       </p>
 
       {loadError && (
-        <p role="alert" style={{ color: '#b91c1c' }}>
-          Could not load messages: {loadError}
-        </p>
+        <p role="alert" className="error">Could not load messages: {loadError}</p>
       )}
 
-      <section
-        aria-label="Conversation"
-        style={{
-          border: '1px solid #ccc',
-          borderRadius: 8,
-          padding: 16,
-          minHeight: 200,
-          maxHeight: 400,
-          overflowY: 'auto',
-          marginBottom: 20
-        }}
-      >
-        {loading && <p>Loading messages…</p>}
+      <section aria-label="Conversation" className="card">
+        {loading && <p className="meta">Loading messages…</p>}
 
         {!loading && !loadError && messages.length === 0 && (
-          <p>No messages yet. Start the conversation below.</p>
+          <p className="meta">No messages yet. Start the conversation below.</p>
         )}
 
-        {messages.map((message) => (
-          <article
-            key={message.id}
-            style={{
-              borderBottom: '1px solid #eee',
-              padding: '12px 0'
-            }}
-          >
-            <strong>
-              {message.sender?.name || 'Participant'}
-            </strong>
-
-            <p
-              style={{
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere'
-              }}
-            >
-              {message.body}
-            </p>
-
-            <small>
-              {new Date(message.createdAt).toLocaleString()}
-            </small>
-          </article>
-        ))}
+        <div className="chat-box">
+          {messages.map((message) => {
+            const mine = message.senderId === currentUserId;
+            return (
+              <article key={message.id} className={`bubble${mine ? ' mine' : ''}`}>
+                {!mine && <strong style={{ fontSize: 13 }}>{message.sender?.name || 'Participant'}</strong>}
+                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.body}</div>
+                <small style={{ opacity: 0.7 }}>{new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
-      <form onSubmit={handleSend}>
+      <form onSubmit={handleSend} className="card">
         <label htmlFor="chat-message">Your message</label>
-
         <textarea
           id="chat-message"
           value={body}
@@ -158,28 +124,15 @@ export default function ChatPage() {
           required
           disabled={sending}
           placeholder="Type a message..."
-          style={{
-            display: 'block',
-            boxSizing: 'border-box',
-            width: '100%',
-            marginTop: 8,
-            marginBottom: 12,
-            padding: 10
-          }}
+          style={{ marginTop: 6, marginBottom: 12 }}
         />
 
-        <button
-          type="submit"
-          disabled={sending || !body.trim()}
-          style={{ padding: '10px 20px' }}
-        >
+        <button type="submit" className="btn" disabled={sending || !body.trim()}>
           {sending ? 'Sending…' : 'Send message'}
         </button>
 
         {sendError && (
-          <p role="alert" style={{ color: '#b91c1c' }}>
-            Could not send message: {sendError}
-          </p>
+          <p role="alert" className="error">Could not send message: {sendError}</p>
         )}
       </form>
     </main>

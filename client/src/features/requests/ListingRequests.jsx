@@ -1,17 +1,9 @@
 // US-07: The listing owner sees the requests on their listing and can accept or decline them.
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { api } from '../../api';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
-const statusColors = {
-  PENDING: '#ca8a04',
-  ACCEPTED: '#16a34a',
-  DECLINED: '#6b7280',
-  CANCELLED: '#6b7280'
-};
-
-export default function ListingRequests({ listingId, onAccepted }) {
+export default function ListingRequests({ listingId, onChange }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -20,17 +12,7 @@ export default function ListingRequests({ listingId, onAccepted }) {
   async function loadRequests() {
     try {
       setError('');
-      const token = localStorage.getItem('accessToken');
-
-      const response = await fetch(`${API_URL}/requests/listing/${listingId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load requests');
-      }
-
+      const data = await api(`/requests/listing/${listingId}`);
       setRequests(data.requests);
     } catch (err) {
       setError(err.message);
@@ -47,28 +29,10 @@ export default function ListingRequests({ listingId, onAccepted }) {
     try {
       setBusyId(requestId);
       setError('');
-      const token = localStorage.getItem('accessToken');
-
-      const response = await fetch(`${API_URL}/requests/${requestId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ status })
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update request');
-      }
-
-      if (status === 'ACCEPTED' && onAccepted) {
-        onAccepted();
-      }
-
+      await api(`/requests/${requestId}/status`, { method: 'PATCH', body: { status } });
       // Reload so requests that were auto-declined (listing full) show up too.
       await loadRequests();
+      if (onChange) onChange();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -76,69 +40,34 @@ export default function ListingRequests({ listingId, onAccepted }) {
     }
   }
 
-  if (loading) return <p>Loading requests...</p>;
-
   return (
-    <section style={{ marginTop: '30px' }}>
+    <div className="card">
       <h2>Requests</h2>
 
-      {error && <p style={{ color: '#dc2626' }}>{error}</p>}
-
-      {requests.length === 0 && <p>No requests yet.</p>}
+      {loading && <p className="meta">Loading requests...</p>}
+      {error && <p className="error">{error}</p>}
+      {!loading && requests.length === 0 && <p className="meta">No requests yet.</p>}
 
       {requests.map((request) => (
-        <div
-          key={request.id}
-          style={{
-            border: '1px solid #e5e7eb',
-            borderRadius: '8px',
-            padding: '12px 16px',
-            marginBottom: '10px'
-          }}
-        >
-          <p><strong>{request.requester?.name || 'Unnamed user'}</strong></p>
-          <p><strong>Pickup point:</strong> {request.pickupLocation}</p>
-          {request.note && <p><strong>Note:</strong> {request.note}</p>}
-          <p>
-            <strong>Status:</strong>{' '}
-            <span style={{ color: statusColors[request.status] }}>{request.status}</span>
-          </p>
+        <div key={request.id} style={{ borderTop: '1px solid var(--border)', padding: '12px 0' }}>
+          <div className="row">
+            <strong>{request.requester?.name || 'A student'}</strong>
+            <span className={`badge ${request.status}`} style={{ marginLeft: 'auto' }}>{request.status}</span>
+          </div>
+          <p className="meta">Pickup point: {request.pickupLocation}</p>
+          {request.note && <p className="meta">Note: {request.note}</p>}
 
-          {request.status === 'PENDING' && (
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => answer(request.id, 'ACCEPTED')}
-                disabled={busyId === request.id}
-                style={buttonStyle('#16a34a')}
-              >
-                Accept
-              </button>
-              <button
-                onClick={() => answer(request.id, 'DECLINED')}
-                disabled={busyId === request.id}
-                style={buttonStyle('#6b7280')}
-              >
-                Decline
-              </button>
-            </div>
-          )}
-
-          <Link to={`/requests/${request.id}/chat`} style={{ display: 'inline-block', marginTop: '8px' }}>
-            Open chat
-          </Link>
+          <div className="row" style={{ marginTop: 6 }}>
+            {request.status === 'PENDING' && (
+              <>
+                <button onClick={() => answer(request.id, 'ACCEPTED')} disabled={busyId === request.id} className="btn green small">Accept</button>
+                <button onClick={() => answer(request.id, 'DECLINED')} disabled={busyId === request.id} className="btn secondary small">Decline</button>
+              </>
+            )}
+            <Link to={`/requests/${request.id}/chat`} className="btn secondary small">Chat</Link>
+          </div>
         </div>
       ))}
-    </section>
+    </div>
   );
-}
-
-function buttonStyle(color) {
-  return {
-    backgroundColor: color,
-    color: 'white',
-    padding: '8px 16px',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer'
-  };
 }
