@@ -4,9 +4,21 @@ import { Link } from 'react-router-dom';
 import { api, formatTime } from '../../api';
 import ListingCard from './ListingCard';
 
+const VIEWS = [
+  ['ALL', 'All'],
+  ['RIDE', 'My rides'],
+  ['TASK', 'My tasks'],
+];
+
+function pendingText(listing) {
+  const count = listing._count?.requests ?? 0;
+  return count ? ` · ${count} pending request${count > 1 ? 's' : ''}` : '';
+}
+
 export default function DashboardPage() {
   const [listings, setListings] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [view, setView] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -22,6 +34,10 @@ export default function DashboardPage() {
 
   if (loading) return <main className="page"><p className="empty">Loading...</p></main>;
 
+  const shownListings = view === 'ALL' ? listings : listings.filter((l) => l.type === view);
+  const shownRequests = view === 'ALL' ? requests : requests.filter((r) => r.listing.type === view);
+  const kind = view === 'RIDE' ? 'rides' : view === 'TASK' ? 'tasks' : 'anything';
+
   return (
     <main className="page">
       <div className="page-header">
@@ -34,35 +50,56 @@ export default function DashboardPage() {
 
       {error && <p className="error">{error}</p>}
 
+      <div className="toggle" role="tablist">
+        {VIEWS.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={view === value}
+            className={view === value ? 'on' : ''}
+            onClick={() => setView(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid-2" style={{ alignItems: 'start' }}>
         <section>
-          <h2>My listings ({listings.length})</h2>
-          {listings.length === 0 && <div className="card empty">You haven't posted anything yet.</div>}
-          {listings.map((listing) => (
-            <ListingCard
-              key={listing.id}
-              listing={listing}
-              extra={
-                listing._count?.requests
-                  ? ` · ${listing._count.requests} pending request${listing._count.requests > 1 ? 's' : ''}`
-                  : ''
-              }
-            />
+          <h2>Posted by me ({shownListings.length})</h2>
+          {shownListings.length === 0 && (
+            <div className="card empty">You haven't posted {kind} yet.</div>
+          )}
+          {shownListings.map((listing) => (
+            <ListingCard key={listing.id} listing={listing} extra={pendingText(listing)} />
           ))}
         </section>
 
         <section>
-          <h2>My requests ({requests.length})</h2>
-          {requests.length === 0 && <div className="card empty">You haven't requested anything yet.</div>}
-          {requests.map((request) => (
-            <Link key={request.id} to={`/listings/${request.listingId}`} className="card card-link">
+          <h2>Requested by me ({shownRequests.length})</h2>
+          {shownRequests.length === 0 && (
+            <div className="card empty">You haven't requested {kind} yet.</div>
+          )}
+          {shownRequests.map((request) => (
+            <div key={request.id} className="card">
               <div className="row">
                 <span className={`badge ${request.listing.type === 'RIDE' ? '' : 'task'}`}>{request.listing.type}</span>
                 <span className={`badge ${request.status}`} style={{ marginLeft: 'auto' }}>{request.status}</span>
               </div>
-              <h3>{request.listing.title}</h3>
-              <p className="meta">{formatTime(request.listing.time)} · Pickup: {request.pickupLocation}</p>
-            </Link>
+              <h3><Link to={`/listings/${request.listingId}`}>{request.listing.title}</Link></h3>
+              <p className="meta">
+                {formatTime(request.listing.time)} · Your pickup: {request.pickupLocation}
+              </p>
+              {request.listing.user?.name && (
+                <p className="meta">Posted by {request.listing.user.name}</p>
+              )}
+              {['PENDING', 'ACCEPTED'].includes(request.status) && (
+                <div className="row" style={{ marginTop: 8 }}>
+                  <Link to={`/requests/${request.id}/chat`} className="btn secondary small">Chat</Link>
+                </div>
+              )}
+            </div>
           ))}
         </section>
       </div>

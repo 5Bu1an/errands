@@ -129,6 +129,7 @@ async function listForListing(req, res, next) {
   }
 }
 
+// US-18: The requests I have made, for the dashboard.
 async function listMine(req, res, next) {
   try {
     const requests = await service.getMyRequests(req.user.id);

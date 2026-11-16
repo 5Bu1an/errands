@@ -44,6 +44,12 @@ Document each endpoint here: method, path, auth required, request body, response
 - 400: `{ "errors": { "<filter>": "message" } }`, one entry per invalid filter
 - 200: `{ "listings": [ { ...listing fields, "user": { "id", "name" } } ] }`, which is `[]` when there are none
 
+### GET /listings/mine (US-18)
+- Auth required: Yes
+- Every listing I posted, in any status (including `CANCELLED` and `COMPLETED`), latest `time` first. Used by the "My errands" dashboard.
+- `_count.requests` is how many requests on the listing are still `PENDING`.
+- 200: `{ "listings": [ { ...listing fields, "_count": { "requests": 2 } } ] }`, which is `[]` when there are none
+
 ### POST /listings
 - Auth required: Yes
 - Ride body: `{ "type": "RIDE", "destination": "Walmart", "time": "2026-10-24T17:30:00Z", "seats": 2, "price"?: 5, "pickupLocation"?: "...", "title"?: "...", "description"?: "..." }`
@@ -82,6 +88,11 @@ Cancels a listing owned by the authenticated user by changing its status to `CAN
 > `PATCH /listings/:id/cancel` follows the same rules, so a Completed or Cancelled listing returns 409.
 
 ## Requests
+
+### GET /requests/mine (US-18)
+- Auth required: Yes
+- Every request I made, in any status, newest first. Used by the "My errands" dashboard.
+- 200: `{ "requests": [ { "id", "listingId", "requesterId", "pickupLocation", "note", "status", "createdAt", "updatedAt", "listing": { "id", "title", "type", "time", "status", "price", "pickupLocation", "dropoffText", "user": { "id", "name" } } } ] }`, which is `[]` when there are none
 
 ### GET /requests/listing/:listingId (US-07)
 - Auth required: Yes (owner of the listing only)

@@ -277,7 +277,10 @@ async function getMyRequests(userId) {
           type: true,
           time: true,
           status: true,
-          price: true
+          price: true,
+          pickupLocation: true,
+          dropoffText: true,
+          user: { select: { id: true, name: true } }
         }
       }
     }
