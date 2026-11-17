@@ -24,6 +24,7 @@ app.use(express.json());
 
 // Register feature routes.
 app.use('/auth', require('./features/auth/routes'));
+app.use('/ratings', require('./features/ratings/routes'));
 app.use('/listings', require('./features/listings/routes'));
 app.use('/requests', require('./features/requests/routes'));
 app.use('/chat', require('./features/chat/routes'));

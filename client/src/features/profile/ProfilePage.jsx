@@ -9,16 +9,54 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [ratingSummary, setRatingSummary] = useState(null);
+  const [ratingError, setRatingError] = useState('');
+  const [ratingLoading, setRatingLoading] = useState(true);
 
   useEffect(() => {
-    api('/users/me')
-      .then(({ profile }) => {
-        setEmail(profile.email);
-        setForm({ name: profile.name || '', program: profile.program || '', bio: profile.bio || '' });
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+  let active = true;
+
+  async function loadProfile() {
+    try {
+      const { profile } = await api('/users/me');
+      if (!active) return;
+
+      setEmail(profile.email || '');
+      setForm({
+        name: profile.name || '',
+        program: profile.program || '',
+        bio: profile.bio || ''
+      });
+      setLoading(false);
+
+      try {
+        const summary = await api(
+          `/ratings/users/${profile.id}/summary`
+        );
+
+        if (active) setRatingSummary(summary);
+      } catch (err) {
+        if (active) setRatingError(err.message);
+      }
+    } catch (err) {
+      if (active) {
+        setError(err.message);
+        setRatingError('Unable to load ratings because the profile could not be loaded.');
+      }
+    } finally {
+      if (active) {
+        setLoading(false);
+        setRatingLoading(false);
+      }
+    }
+  }
+
+  loadProfile();
+
+  return () => {
+    active = false;
+  };
+}, []);
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -73,9 +111,30 @@ export default function ProfilePage() {
       </form>
 
       <div className="card">
-        <h2>Rating</h2>
-        <p className="meta">No ratings yet. Ratings from completed rides and tasks (US-15) arrive in Sprint 3.</p>
-      </div>
+  <h2>Rating</h2>
+
+  {ratingLoading ? (
+    <p className="meta">Loading ratings...</p>
+  ) : ratingError ? (
+    <p className="error" role="alert">{ratingError}</p>
+  ) : ratingSummary?.ratingCount > 0 ? (
+    <>
+      <p>
+        <strong>
+          {Number(ratingSummary.averageRating).toFixed(1)} / 5
+        </strong>
+        {' — '}
+        {ratingSummary.ratingCount}{' '}
+        {ratingSummary.ratingCount === 1 ? 'rating' : 'ratings'}
+      </p>
+      <p className="meta">
+        From participants in completed rides and tasks.
+      </p>
+    </>
+  ) : (
+    <p className="meta">No ratings yet.</p>
+  )}
+</div>
     </main>
   );
 }
