@@ -190,6 +190,7 @@ model Rating {
   giver    User    @relation("GivenRatings", fields: [giverId], references: [id], onDelete: Cascade)
   receiver User    @relation("ReceivedRatings", fields: [receiverId], references: [id], onDelete: Cascade)
 
+  @@unique([listingId, giverId, receiverId])
   @@index([receiverId])
   @@map("ratings")
 }

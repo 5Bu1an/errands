@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api, formatTime } from '../../api';
 import ListingRequests from '../requests/ListingRequests';
 import RequestSeatForm from '../requests/RequestSeatForm';
+import RatingForm from '../ratings/RatingForm';
 
 const FINISHED = ['CANCELLED', 'COMPLETED'];
 const TRACKABLE_STATUSES = ['CONFIRMED', 'IN_PROGRESS'];
@@ -165,6 +166,8 @@ export default function ListingDetailsPage() {
 
       setTrackingMessage('Trip progress updated successfully.');
       await refreshTracking();
+      await load();
+await load();
     } catch (err) {
       setTrackingError(err.message);
     } finally {
@@ -404,20 +407,21 @@ export default function ListingDetailsPage() {
               </div>
             )}
 
+          {listing.status === 'COMPLETED' &&
+  (isOwner || myRequest?.status === 'ACCEPTED') && (
+    <RatingForm key={listing.id} listingId={listing.id} />
+  )}
           {/* Features planned for later sprints. */}
           <div className="card" style={{ marginTop: 20 }}>
             <h2>Other Actions</h2>
             <div className="row">
               <button className="btn soon" disabled>
-                Rate the other person
-              </button>
-              <button className="btn soon" disabled>
                 Report
               </button>
             </div>
             <p className="soon-note">
-              Ratings (US-15) and reports (US-20) are planned for a future sprint.
-            </p>
+          Reports (US-20) are planned for a future sprint.
+         </p>
           </div>
         </section>
       </div>
