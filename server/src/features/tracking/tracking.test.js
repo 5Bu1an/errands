@@ -2,11 +2,16 @@
 jest.mock('../../lib/prisma', () => {
   const prisma = {
     listing: {
-      findUnique: jest.fn(),
-    },
-    request: {
-      findFirst: jest.fn(),
-    },
+  findUnique: jest.fn(),
+  update: jest.fn(),
+},
+request: {
+  findFirst: jest.fn(),
+  findMany: jest.fn(),
+},
+notification: {
+  create: jest.fn(),
+},
     tripUpdate: {
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -39,7 +44,9 @@ const ride = {
 
 beforeEach(() => {
   jest.resetAllMocks();
-
+  prisma.listing.update.mockResolvedValue({});
+prisma.request.findMany.mockResolvedValue([]);
+prisma.notification.create.mockResolvedValue({});
   prisma.$transaction.mockImplementation((callback) => callback(prisma));
   prisma.$queryRaw.mockResolvedValue([{ id: LISTING_ID }]);
 
@@ -300,4 +307,83 @@ describe('US-11: Post trip progress updates', () => {
 
     expect(calls).toEqual(['lock', 'read', 'create']);
   });
+});
+
+test('leaving now changes the listing to IN_PROGRESS', async () => {
+  prisma.listing.findUnique.mockResolvedValue({
+    ...ride,
+    status: 'CONFIRMED'
+  });
+
+  prisma.tripUpdate.findFirst.mockResolvedValue(null);
+  prisma.tripUpdate.create.mockResolvedValue({
+    id: 'update-1',
+    listingId: LISTING_ID,
+    step: 'LEAVING_NOW'
+  });
+
+  await service.createTrackingUpdate(
+    LISTING_ID,
+    OWNER_ID,
+    'LEAVING_NOW'
+  );
+
+  expect(prisma.listing.update).toHaveBeenCalledWith({
+    where: { id: LISTING_ID },
+    data: { status: 'IN_PROGRESS' }
+  });
+
+  expect(prisma.notification.create).not.toHaveBeenCalled();
+});
+
+test('completion updates the listing and notifies each rider once', async () => {
+  prisma.listing.findUnique.mockResolvedValue({
+    ...ride,
+    title: 'Campus ride'
+  });
+
+  prisma.tripUpdate.findFirst.mockResolvedValue({
+    step: 'IM_HERE'
+  });
+
+  prisma.tripUpdate.create.mockResolvedValue({
+    id: 'update-2',
+    listingId: LISTING_ID,
+    step: 'COMPLETED'
+  });
+
+  prisma.request.findMany.mockResolvedValue([
+    { requesterId: RIDER_ID },
+    { requesterId: RIDER_ID },
+    { requesterId: OTHER_ID }
+  ]);
+
+  await service.createTrackingUpdate(
+    LISTING_ID,
+    OWNER_ID,
+    'COMPLETED'
+  );
+
+  expect(prisma.listing.update).toHaveBeenCalledWith({
+    where: { id: LISTING_ID },
+    data: { status: 'COMPLETED' }
+  });
+
+  expect(prisma.request.findMany).toHaveBeenCalledWith({
+    where: { listingId: LISTING_ID, status: 'ACCEPTED' },
+    select: { requesterId: true }
+  });
+
+  expect(prisma.notification.create).toHaveBeenCalledTimes(2);
+
+  for (const userId of [RIDER_ID, OTHER_ID]) {
+    expect(prisma.notification.create).toHaveBeenCalledWith({
+      data: {
+        userId,
+        message:
+          'The listing "Campus ride" has been completed. ' +
+          'Please rate your experience!'
+      }
+    });
+  }
 });

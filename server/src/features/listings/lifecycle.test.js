@@ -1,17 +1,22 @@
 // US-08: Listing lifecycle rules.
-jest.mock('../../lib/prisma', () => ({
-  listing: {
-    findUnique: jest.fn(),
-    updateMany: jest.fn()
-  },
-  // US-17: Completing a listing notifies accepted requesters.
-  request: {
-    findMany: jest.fn().mockResolvedValue([])
-  },
-  notification: {
-    create: jest.fn()
-  }
-}));
+jest.mock('../../lib/prisma', () => {
+  const mockPrisma = {
+    listing: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn()
+    },
+    request: {
+      findMany: jest.fn().mockResolvedValue([])
+    },
+    notification: {
+      create: jest.fn()
+    }
+  };
+
+  mockPrisma.$transaction = async (callback) => callback(mockPrisma);
+
+  return mockPrisma;
+});
 
 const prisma = require('../../lib/prisma');
 const { STATUSES, canTransition } = require('./lifecycle');

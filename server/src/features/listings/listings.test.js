@@ -6,15 +6,26 @@ jest.mock('../../lib/supabase', () => ({
   auth: { getUser: jest.fn() },
 }));
 
-jest.mock('../../lib/prisma', () => ({
-  listing: {
-    create: jest.fn(),
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    updateMany: jest.fn(),
-  },
-}));
+jest.mock('../../lib/prisma', () => {
+  const mockPrisma = {
+    listing: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      updateMany: jest.fn()
+    },
+    request: {
+      findMany: jest.fn()
+    },
+    notification: {
+      create: jest.fn()
+    }
+  };
 
+  mockPrisma.$transaction = async (callback) => callback(mockPrisma);
+
+  return mockPrisma;
+});
 const supabase = require('../../lib/supabase');
 const prisma = require('../../lib/prisma');
 const app = require('../../app');
