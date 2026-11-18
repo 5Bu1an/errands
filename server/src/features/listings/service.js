@@ -1,5 +1,8 @@
 const prisma = require('../../lib/prisma');
 const { canTransition } = require('./lifecycle');
+const {
+  withNotificationEmails
+} = require('../notifications/service');
 
 // Create a new listing for a user.
 // New listings always start with OPEN status.
@@ -89,52 +92,55 @@ async function getById(id) {
 
 // US-08: Move a listing to a new status, following the lifecycle rules.
 async function changeStatus(id, userId, status) {
-  const listing = await prisma.listing.findUnique({
-    where: { id }
-  });
-
-  if (!listing) {
-    return { error: 'NOT_FOUND' };
-  }
-
-  if (listing.userId !== userId) {
-    return { error: 'FORBIDDEN' };
-  }
-
-  if (!canTransition(listing.status, status)) {
-    return { error: 'INVALID_STATUS', from: listing.status };
-  }
-
-  // US-17: Notify accepted requesters when the listing is completed
-  if (status === 'COMPLETED') {
-    const acceptedRequests = await prisma.request.findMany({
-      where: { listingId: id, status: 'ACCEPTED' }
+  return withNotificationEmails(async (tx, notify) => {
+    const listing = await tx.listing.findUnique({
+      where: { id }
     });
 
-    for (const req of acceptedRequests) {
-      await prisma.notification.create({
-        data: {
-          userId: req.requesterId,
-          message: `The listing "${listing.title}" has been completed. Please rate your experience!`
-        }
-      });
+    if (!listing) {
+      return { error: 'NOT_FOUND' };
     }
-  }
 
-  // Only update if the status is still the one we checked,
-  // so a concurrent change can't slip past the rules.
-  const result = await prisma.listing.updateMany({
-    where: { id, userId, status: listing.status },
-    data: { status }
+    if (listing.userId !== userId) {
+      return { error: 'FORBIDDEN' };
+    }
+
+    if (!canTransition(listing.status, status)) {
+      return { error: 'INVALID_STATUS', from: listing.status };
+    }
+
+    const result = await tx.listing.updateMany({
+      where: { id, userId, status: listing.status },
+      data: { status }
+    });
+
+    if (result.count === 0) {
+      return { error: 'INVALID_STATUS', from: listing.status };
+    }
+
+    if (status === 'COMPLETED') {
+      const acceptedRequests = await tx.request.findMany({
+        where: { listingId: id, status: 'ACCEPTED' }
+      });
+
+      const recipients = [
+        ...new Set(acceptedRequests.map((request) => request.requesterId))
+      ];
+
+      for (const requesterId of recipients) {
+        await notify({
+          data: {
+            userId: requesterId,
+            message:
+              `The listing "${listing.title}" has been completed. ` +
+              'Please rate your experience!'
+          }
+        });
+      }
+    }
+
+    return { success: true };
   });
-
-  if (result.count === 0) {
-    return { error: 'INVALID_STATUS', from: listing.status };
-  }
-
-
-
-  return { success: true };
 }
 
 // US-14: Cancel a listing.

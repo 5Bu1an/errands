@@ -96,6 +96,58 @@ async function getRatingSummary(userId) {
     averageRating: result._avg.score,
     ratingCount: result._count._all
   };
+
+}
+async function getRatingOptions(listingId, userId) {
+  const listing = await prisma.listing.findUnique({
+    where: { id: listingId },
+    include: {
+      user: { select: { id: true, name: true } },
+      requests: {
+        where: { status: 'ACCEPTED' },
+        include: {
+          requester: { select: { id: true, name: true } }
+        }
+      },
+      ratings: { where: { giverId: userId } }
+    }
+  });
+
+  if (!listing) return { error: 'NOT_FOUND' };
+
+  const isOwner = listing.userId === userId;
+  const participated = listing.requests.some(
+    (request) => request.requesterId === userId
+  );
+
+  if (!isOwner && !participated) return { error: 'FORBIDDEN' };
+
+  if (listing.status !== 'COMPLETED') {
+    return { error: 'NOT_COMPLETED' };
+  }
+
+  const people = isOwner
+    ? listing.requests.map((request) => request.requester)
+    : [listing.user];
+
+  const uniquePeople = [
+    ...new Map(people.map((person) => [person.id, person])).values()
+  ];
+
+  return {
+    people: uniquePeople.map((person) => ({
+      ...person,
+      alreadyRated: listing.ratings.some(
+        (rating) => rating.receiverId === person.id
+      )
+    }))
+  };
 }
 
-module.exports = { createRating, getRatingSummary };
+
+
+module.exports = {
+  createRating,
+  getRatingSummary,
+  getRatingOptions
+};

@@ -6,6 +6,7 @@ jest.mock('../../lib/prisma', () => ({
 }));
 
 const prisma = require('../../lib/prisma');
+prisma.$transaction = async (callback) => callback(prisma);
 const { cancelListing } = require('./service');
 
 const id = '550e8400-e29b-41d4-a716-446655440000';

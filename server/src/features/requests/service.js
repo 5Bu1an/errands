@@ -6,6 +6,9 @@ const listingLifecycle = require('../listings/lifecycle');
 const OWNER_STATUSES = ['ACCEPTED', 'DECLINED'];
 const REQUESTER_STATUSES = ['CANCELLED'];
 const ACCEPTING_LISTING_STATUSES = ['OPEN', 'REQUESTED', 'CONFIRMED'];
+const {
+  withNotificationEmails
+} = require('../notifications/service');
 
 function capacityOf(listing) {
   return listing.type === 'RIDE' ? listing.availableSeats || 0 : 1;
@@ -24,7 +27,7 @@ async function lockListing(tx, listingId) {
 
 // US-08 / US-07: Change a request's status.
 async function changeStatus(id, userId, status) {
-  return prisma.$transaction(async (tx) => {
+  return withNotificationEmails(async (tx, notify) => {
     const initial = await tx.request.findUnique({
       where: { id },
       select: { listingId: true }
@@ -127,7 +130,7 @@ async function changeStatus(id, userId, status) {
           });
 
           for (const other of others) {
-            await tx.notification.create({
+            await notify({
               data: {
                 userId: other.requesterId,
                 message: `"${request.listing.title}" is now full, so your request was declined.`
@@ -137,14 +140,14 @@ async function changeStatus(id, userId, status) {
         }
       }
 
-      await tx.notification.create({
+      await notify({
         data: {
           userId: request.requesterId,
           message: `Your request for "${request.listing.title}" has been accepted!`
         }
       });
     } else if (status === 'DECLINED') {
-      await tx.notification.create({
+      await notify({
         data: {
           userId: request.requesterId,
           message: `Your request for "${request.listing.title}" was declined.`
@@ -184,7 +187,7 @@ async function getListingRequests(listingId, userId) {
 
 // US-06: Create a ride-seat or task-help request.
 async function createRequest(userId, listingId, pickupLocation, note) {
-  return prisma.$transaction(async (tx) => {
+  return withNotificationEmails(async (tx, notify) => {
     if (!(await lockListing(tx, listingId))) {
       return { error: 'NOT_FOUND' };
     }
@@ -253,7 +256,7 @@ async function createRequest(userId, listingId, pickupLocation, note) {
       data: { status: 'REQUESTED' }
     });
 
-    await tx.notification.create({
+    await notify({
       data: {
         userId: listing.userId,
         message: `You have a new request for your listing "${listing.title}".`

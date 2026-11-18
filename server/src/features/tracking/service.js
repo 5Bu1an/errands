@@ -1,4 +1,7 @@
 const prisma = require('../../lib/prisma');
+const {
+  withNotificationEmails
+} = require('../notifications/service');
 
 const STEPS = [
   'LEAVING_NOW',
@@ -53,7 +56,7 @@ async function createTrackingUpdate(listingId, userId, step) {
     return { error: 'INVALID_STEP' };
   }
 
-  return prisma.$transaction(async (tx) => {
+  return withNotificationEmails(async (tx, notify) => {
     // Lock this listing until the transaction finishes.
     // Concurrent tracking updates for the same ride must wait.
     const lockedRows = await tx.$queryRaw`
@@ -106,10 +109,42 @@ async function createTrackingUpdate(listingId, userId, step) {
     }
 
     const update = await tx.tripUpdate.create({
-      data: { listingId, step },
-    });
+  data: { listingId, step },
+});
 
-    return { update };
+// Keep the listing status consistent with trip progress.
+if (step === 'LEAVING_NOW' || step === 'COMPLETED') {
+  await tx.listing.update({
+    where: { id: listingId },
+    data: {
+      status: step === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS'
+    }
+  });
+}
+
+if (step === 'COMPLETED') {
+  const acceptedRequests = await tx.request.findMany({
+    where: { listingId, status: 'ACCEPTED' },
+    select: { requesterId: true }
+  });
+
+  const recipients = [
+    ...new Set(acceptedRequests.map((request) => request.requesterId))
+  ];
+
+  for (const requesterId of recipients) {
+    await notify({
+      data: {
+        userId: requesterId,
+        message:
+          `The listing "${listing.title}" has been completed. ` +
+          'Please rate your experience!'
+      }
+    });
+  }
+}
+
+return { update };
   });
 }
 
