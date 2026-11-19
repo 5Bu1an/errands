@@ -4,21 +4,31 @@ const {
   withNotificationEmails
 } = require('../notifications/service');
 
-// Create a new listing for a user.
-// New listings always start with OPEN status.
-async function createListing(userId, data) {
-  return prisma.listing.create({
-    data: {
-      ...data,
-      status: 'OPEN',
-      user: {
-        connectOrCreate: {
-          where: { id: userId },
-          create: { id: userId }
-        }
+// New listings always start with OPEN status. Creates the user row if it's missing.
+function newListingData(userId, data) {
+  return {
+    ...data,
+    status: 'OPEN',
+    user: {
+      connectOrCreate: {
+        where: { id: userId },
+        create: { id: userId }
       }
     }
-  });
+  };
+}
+
+// Create a new listing for a user.
+async function createListing(userId, data) {
+  return prisma.listing.create({ data: newListingData(userId, data) });
+}
+
+// US-23: Create the same ride once for each of the given times.
+// All or nothing: if one fails, none are saved.
+async function createWeeklyRides(userId, data, times) {
+  return prisma.$transaction(
+    times.map((time) => prisma.listing.create({ data: newListingData(userId, { ...data, time }) }))
+  );
 }
 
 // US-13: Turn the browse filters into a Prisma "where". Listings must be OPEN
@@ -148,4 +158,4 @@ async function cancelListing(id, userId) {
   return changeStatus(id, userId, 'CANCELLED');
 }
 
-module.exports = { createListing, buildListingWhere, listOpenListings, listMine, getById, changeStatus, cancelListing };
+module.exports = { createListing, createWeeklyRides, buildListingWhere, listOpenListings, listMine, getById, changeStatus, cancelListing };

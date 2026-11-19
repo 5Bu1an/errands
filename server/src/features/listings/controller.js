@@ -4,6 +4,10 @@ const { STATUSES } = require('./lifecycle');
 const MIN_SEATS = 1;
 const MAX_SEATS = 6;
 
+// US-23: Repeat weekly rides for up to 12 weeks after the first one.
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_REPEAT_WEEKS = 12;
+
 function isBlank(value) {
   return typeof value !== 'string' || !value.trim();
 }
@@ -32,7 +36,41 @@ function checkAmount(value, field, label, errors) {
   return amount;
 }
 
-// Returns { errors } if anything is wrong, otherwise { data } ready to save.
+// US-23: Read "Repeat weekly". Returns the time of every ride to create,
+// one per week from the first ride up to and including the end date.
+// A plain date like "2026-12-20" counts as the end of that day (UTC).
+function checkRepeat(body, firstTime, errors) {
+  if (body.repeatWeekly == null || body.repeatWeekly === false) return [firstTime];
+  if (body.repeatWeekly !== true) {
+    errors.repeatWeekly = 'Repeat weekly must be true or false';
+    return [];
+  }
+
+  const raw = typeof body.repeatUntil === 'string' ? body.repeatUntil.trim() : '';
+  const until = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T23:59:59.999Z` : raw);
+  if (!raw || Number.isNaN(until.getTime())) {
+    errors.repeatUntil = 'End date is required for a weekly ride';
+    return [];
+  }
+
+  // The first ride's time is checked separately; nothing more to check without it.
+  if (errors.time) return [];
+
+  if (until < new Date(firstTime.getTime() + WEEK_MS)) {
+    errors.repeatUntil = 'End date must be at least one week after the first ride';
+  } else if (until > new Date(firstTime.getTime() + MAX_REPEAT_WEEKS * WEEK_MS)) {
+    errors.repeatUntil = `Rides can repeat for up to ${MAX_REPEAT_WEEKS} weeks`;
+  }
+  if (errors.repeatUntil) return [];
+
+  const times = [];
+  for (let t = firstTime.getTime(); t <= until.getTime(); t += WEEK_MS) {
+    times.push(new Date(t));
+  }
+  return times;
+}
+
+// Returns { errors } if anything is wrong, otherwise { data, times } ready to save.
 function validateRide(body = {}) {
   const errors = {};
 
@@ -50,6 +88,7 @@ function validateRide(body = {}) {
   }
 
   const price = checkAmount(body.price, 'price', 'Price', errors);
+  const times = checkRepeat(body, time, errors);
 
   if (Object.keys(errors).length > 0) return { errors };
 
@@ -66,6 +105,7 @@ function validateRide(body = {}) {
       availableSeats: seats,
       price,
     },
+    times,
   };
 }
 
@@ -103,10 +143,16 @@ async function create(req, res, next) {
     return res.status(400).json({ errors: { type: 'Type must be RIDE or TASK' } });
   }
 
-  const { errors, data } = validate(req.body);
+  const { errors, data, times } = validate(req.body);
   if (errors) return res.status(400).json({ errors });
 
   try {
+    // US-23: A weekly ride is saved as one normal ride per week.
+    if (times && times.length > 1) {
+      const listings = await service.createWeeklyRides(req.user.id, data, times);
+      return res.status(201).json({ listing: listings[0], listings });
+    }
+
     const listing = await service.createListing(req.user.id, data);
     return res.status(201).json({ listing });
   } catch (err) {

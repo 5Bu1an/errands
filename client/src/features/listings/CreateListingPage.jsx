@@ -1,4 +1,4 @@
-// US-03: Post a ride offer. US-04: Post a task request.
+// US-03: Post a ride offer. US-04: Post a task request. US-23: Repeat a ride weekly.
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api';
@@ -12,7 +12,14 @@ const EMPTY = {
   seats: '1',
   price: '0',
   description: '',
+  repeatWeekly: false,
+  repeatUntil: '',
 };
+
+// US-23: The end date is the user's local day, so send the end of that day.
+function endOfLocalDay(date) {
+  return new Date(`${date}T23:59:59.999`).toISOString();
+}
 
 export default function CreateListingPage() {
   const navigate = useNavigate();
@@ -22,8 +29,8 @@ export default function CreateListingPage() {
   const [loading, setLoading] = useState(false);
 
   function handleChange(event) {
-    const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
+    const { name, value, type: inputType, checked } = event.target;
+    setForm((previous) => ({ ...previous, [name]: inputType === 'checkbox' ? checked : value }));
   }
 
   async function handleSubmit(event) {
@@ -43,6 +50,10 @@ export default function CreateListingPage() {
             seats: Number(form.seats),
             price: Number(form.price),
             description: form.description,
+            ...(form.repeatWeekly && {
+              repeatWeekly: true,
+              repeatUntil: form.repeatUntil ? endOfLocalDay(form.repeatUntil) : '',
+            }),
           }
         : {
             type,
@@ -55,7 +66,8 @@ export default function CreateListingPage() {
 
     try {
       const data = await api('/listings', { method: 'POST', body });
-      navigate(`/listings/${data.listing.id}`);
+      // A weekly ride makes several listings, so show them all on the dashboard.
+      navigate(data.listings ? '/dashboard' : `/listings/${data.listing.id}`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -126,6 +138,35 @@ export default function CreateListingPage() {
             </div>
           </div>
 
+          {isRide && (
+            <div className="field">
+              <label className="row" style={{ fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  name="repeatWeekly"
+                  checked={form.repeatWeekly}
+                  onChange={handleChange}
+                  style={{ width: 'auto' }}
+                />
+                Repeat weekly
+              </label>
+              {form.repeatWeekly && (
+                <div className="field" style={{ marginTop: 10 }}>
+                  <label htmlFor="repeatUntil">Repeat until</label>
+                  <input
+                    id="repeatUntil"
+                    name="repeatUntil"
+                    type="date"
+                    value={form.repeatUntil}
+                    onChange={handleChange}
+                    required
+                  />
+                  <p className="soon-note">A separate ride is posted for each week, up to 12 weeks. You can cancel any week on its own.</p>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="field">
             <label htmlFor="description">Details {isRide && '(optional)'}</label>
             <textarea
@@ -141,7 +182,7 @@ export default function CreateListingPage() {
           {error && <p role="alert" className="error">{error}</p>}
 
           <button type="submit" className="btn full" disabled={loading}>
-            {loading ? 'Posting...' : isRide ? 'Post ride' : 'Post task'}
+            {loading ? 'Posting...' : isRide ? (form.repeatWeekly ? 'Post weekly rides' : 'Post ride') : 'Post task'}
           </button>
         </form>
       </div>
