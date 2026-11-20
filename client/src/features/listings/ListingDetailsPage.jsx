@@ -5,6 +5,7 @@ import { api, formatTime } from '../../api';
 import ListingRequests from '../requests/ListingRequests';
 import RequestSeatForm from '../requests/RequestSeatForm';
 import RatingForm from '../ratings/RatingForm';
+import TripMap from './TripMap';
 
 const FINISHED = ['CANCELLED', 'COMPLETED'];
 const TRACKABLE_STATUSES = ['CONFIRMED', 'IN_PROGRESS'];
@@ -167,7 +168,6 @@ export default function ListingDetailsPage() {
       setTrackingMessage('Trip progress updated successfully.');
       await refreshTracking();
       await load();
-await load();
     } catch (err) {
       setTrackingError(err.message);
     } finally {
@@ -301,6 +301,17 @@ await load();
             />
           )}
 
+          {/* US-21: Pickup and destination pins on the trip map. */}
+          {isRide && (
+            <div className="card" style={{ marginTop: 20 }}>
+              <h2>Trip Map</h2>
+              <TripMap
+                pickupLabel={listing.pickupLocation}
+                destinationLabel={listing.dropoffText}
+              />
+            </div>
+          )}
+
           {/* US-11: Functional trip progress tracking. */}
           {isRide &&
             listing.status !== 'CANCELLED' &&
@@ -408,9 +419,10 @@ await load();
             )}
 
           {listing.status === 'COMPLETED' &&
-  (isOwner || myRequest?.status === 'ACCEPTED') && (
-    <RatingForm key={listing.id} listingId={listing.id} />
-  )}
+            (isOwner || myRequest?.status === 'ACCEPTED') && (
+              <RatingForm key={listing.id} listingId={listing.id} />
+            )}
+
           {/* Features planned for later sprints. */}
           <div className="card" style={{ marginTop: 20 }}>
             <h2>Other Actions</h2>
@@ -420,8 +432,8 @@ await load();
               </button>
             </div>
             <p className="soon-note">
-          Reports (US-20) are planned for a future sprint.
-         </p>
+              Reports (US-20) are planned for a future sprint.
+            </p>
           </div>
         </section>
       </div>
