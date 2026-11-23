@@ -5,6 +5,7 @@ import { api, formatTime } from '../../api';
 import ListingRequests from '../requests/ListingRequests';
 import RequestSeatForm from '../requests/RequestSeatForm';
 import RatingForm from '../ratings/RatingForm';
+import ReportForm from '../reports/ReportForm';
 import TripMap from './TripMap';
 
 const FINISHED = ['CANCELLED', 'COMPLETED'];
@@ -423,18 +424,22 @@ export default function ListingDetailsPage() {
               <RatingForm key={listing.id} listingId={listing.id} />
             )}
 
-          {/* Features planned for later sprints. */}
-          <div className="card" style={{ marginTop: 20 }}>
-            <h2>Other Actions</h2>
-            <div className="row">
-              <button className="btn soon" disabled>
-                Report
-              </button>
+          {/* US-20: Anyone but the owner can report the listing or its poster. */}
+          {!isOwner && (
+            <div key={listing.id} className="card" style={{ marginTop: 20 }}>
+              <h2>Something wrong?</h2>
+              <p className="meta" style={{ marginBottom: 10 }}>
+                Reports go to the Errands admins, not to the poster.
+              </p>
+              <div className="row">
+                <ReportForm listingId={listing.id} label="Report this listing" />
+                <ReportForm
+                  reportedId={listing.userId}
+                  label={`Report ${listing.user?.name || 'the poster'}`}
+                />
+              </div>
             </div>
-            <p className="soon-note">
-              Reports (US-20) are planned for a future sprint.
-            </p>
-          </div>
+          )}
         </section>
       </div>
     </main>

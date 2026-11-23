@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api';
+import ReportForm from '../reports/ReportForm';
 
 export default function ListingRequests({ listingId, onChange }) {
   const [requests, setRequests] = useState([]);
@@ -65,6 +66,8 @@ export default function ListingRequests({ listingId, onChange }) {
               </>
             )}
             <Link to={`/requests/${request.id}/chat`} className="btn secondary small">Chat</Link>
+            {/* US-20: The owner can report a requester. */}
+            <ReportForm reportedId={request.requesterId} label="Report" small />
           </div>
         </div>
       ))}
