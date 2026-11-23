@@ -30,6 +30,8 @@ app.use('/requests', require('./features/requests/routes'));
 app.use('/chat', require('./features/chat/routes'));
 app.use('/users', require('./features/users/routes'));
 app.use('/notifications', require('./features/notifications/routes'));
+app.use('/reports', require('./features/reports/routes'));
+app.use('/admin', require('./features/admin/routes'));
 
 // US-11: Trip Progress Tracking
 app.use('/listings', require('./features/tracking/routes'));

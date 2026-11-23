@@ -11,6 +11,7 @@ import DashboardPage from './features/listings/DashboardPage';
 import ChatPage from './features/chat/ChatPage';
 import NotificationsPage from './features/notifications/NotificationsPage';
 import ProfilePage from './features/profile/ProfilePage';
+import AdminPage from './features/admin/AdminPage';
 
 // Logged-in pages share the nav bar. Without a token, go to login.
 function ProtectedLayout() {
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/requests/:requestId/chat" element={<ChatPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/listings" replace />} />

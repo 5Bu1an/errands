@@ -117,3 +117,53 @@ Cancels a listing owned by the authenticated user by changing its status to `CAN
 - 409: `{ "error": "Request cannot move from <current> to <status>" }`. The status is left unchanged.
 - 409: `{ "error": "This listing is already full" }` when accepting a ride with no free seats, or a task that already has a helper.
 - US-07, on `ACCEPTED`: the listing moves to `CONFIRMED` (if it was `OPEN`/`REQUESTED`). When the last seat is taken (or a task gets its helper), the other `PENDING` requests are set to `DECLINED` and those requesters are notified. Requests can only be accepted while the listing is `OPEN`, `REQUESTED` or `CONFIRMED`.
+
+## Reports
+
+### POST /reports (US-20)
+- Auth required: Yes
+- Body: `{ "listingId"?: "uuid", "reportedId"?: "uuid", "reason": "..." }`. Give a listing, a user, or both.
+  - `reason`: required, 500 characters or less.
+- 201: `{ "report": { "id", "reporterId", "listingId", "reportedId", "reason", "status": "PENDING", "createdAt" } }`
+- 400: `{ "errors": { "target"?, "listingId"?, "reportedId"?, "reason"? } }`
+- 400: `{ "error": "You cannot report yourself" }` or `{ "error": "You cannot report your own listing" }`
+- 404: `{ "error": "Listing not found" }` or `{ "error": "User not found" }`
+- 409: `{ "error": "You already reported this and it is still being reviewed" }`, when you have an unresolved report on the same target.
+
+## Admin (US-19)
+
+Every `/admin` endpoint needs a logged-in user whose `users.is_admin` is `true`. Everyone else gets 403 `{ "error": "Admins only" }`.
+There's no endpoint to make someone an admin. Set it in the Supabase SQL editor:
+`update users set is_admin = true where id = '<their user id>';`
+
+### GET /admin/users
+- 200: `{ "users": [ { "id", "name", "program", "isAdmin", "createdAt", "email", "_count": { "listings", "reportsAgainst" } } ] }`, newest first.
+  - `email` comes from Supabase Auth and is `null` if that lookup fails. `reportsAgainst` counts reports that are not `RESOLVED`.
+
+### DELETE /admin/users/:id
+- Deletes the user's Supabase login and their `users` row, which also deletes their listings, requests, messages, ratings and reports.
+- 200: `{ "message": "User removed" }`
+- 400: `{ "error": "Invalid user ID" }` or `{ "error": "You cannot remove yourself" }`
+- 403: `{ "error": "You cannot remove another admin" }`
+- 404: `{ "error": "User not found" }`
+
+### GET /admin/listings
+- Every listing in any status, newest first.
+- 200: `{ "listings": [ { ...listing fields, "user": { "id", "name" }, "_count": { "reports" } } ] }`
+
+### DELETE /admin/listings/:id
+- Deletes the listing with its requests, messages and reports, and sends the owner a notification.
+- 200: `{ "message": "Listing removed" }`
+- 400: `{ "error": "Invalid listing ID" }`
+- 404: `{ "error": "Listing not found" }`
+
+### GET /admin/reports
+- Optional `?status=PENDING|REVIEWED|RESOLVED`. Newest first.
+- 200: `{ "reports": [ { "id", "reason", "status", "createdAt", "reporter": { "id", "name" }, "reported": { "id", "name" } | null, "listing": { "id", "title", "status", "userId" } | null } ] }`
+- 400: `{ "errors": { "status": "..." } }`
+
+### PATCH /admin/reports/:id
+- Body: `{ "status": "REVIEWED" }` (or `PENDING`, `RESOLVED`)
+- 200: `{ "message": "Report updated", "status": "REVIEWED" }`
+- 400: invalid ID or status
+- 404: `{ "error": "Report not found" }`

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
@@ -12,6 +12,14 @@ const links = [
 
 export default function NavBar() {
   const navigate = useNavigate();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // US-19: Only admins see the Admin link.
+  useEffect(() => {
+    api('/users/me')
+      .then(({ profile }) => setIsAdmin(Boolean(profile.isAdmin)))
+      .catch(() => setIsAdmin(false));
+  }, []);
 
   async function handleLogout() {
     try {
@@ -28,7 +36,7 @@ export default function NavBar() {
     <nav className="nav">
       <div className="nav-inner">
         <NavLink to="/listings" className="brand">Errand<span>s</span></NavLink>
-        {links.map(([to, label]) => (
+        {[...links, ...(isAdmin ? [['/admin', 'Admin']] : [])].map(([to, label]) => (
           <NavLink
             key={to}
             to={to}
